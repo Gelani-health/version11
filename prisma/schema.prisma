@@ -1,0 +1,1472 @@
+// AI Healthcare Assistant for Bahmni - Database Schema
+// Supports FHIR R4 integration and AI-powered clinical decision support
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE HEALTHCARE ENTITIES
+// ============================================
+
+/// Patient records - Smart Patient Identity System
+model Patient {
+  id              String   @id @default(cuid())
+  bahmniPatientId String?  @unique // FHIR Patient resource ID from Bahmni
+  mrn             String?  @unique // Medical Record Number
+  
+  // ============================================
+  // PATIENT IDENTITY (National/International)
+  // ============================================
+  nationalHealthId       String? @unique // National Health ID (e.g., SSN, NHS number)
+  nationalIdType         String? // Type: ssn, nhs, national-id, passport
+  biometricId            String? // Biometric reference ID
+  facialRecognitionId    String? // Facial recognition template reference
+  patientDigitalId       String? @unique // Digital patient ID for smart card
+  smartCardSerialNumber  String? // Physical smart card serial
+
+  // ============================================
+  // DEMOGRAPHICS
+  // ============================================
+  title           String?  // Mr., Mrs., Dr., etc.
+  firstName       String
+  lastName        String
+  middleName      String?
+  preferredName   String? // Name patient prefers to be called
+  dateOfBirth     DateTime
+  gender          String   // male, female, other, unknown
+  bloodType       String?
+  rhFactor        String?  // positive, negative
+  maritalStatus   String?  // single, married, divorced, widowed, separated
+  ethnicity       String?
+  race            String?
+  
+  // ============================================
+  // NATIONALITY & LANGUAGE
+  // ============================================
+  nationalities   String?  // JSON array of nationalities (multi-select)
+  languages       String?  // JSON array of languages spoken (multi-select)
+  
+  // ============================================
+  // CONTACT INFORMATION
+  // ============================================
+  phone           String?
+  phoneType       String?  // mobile, home, work
+  alternatePhone  String?
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  postalCode      String?
+  country         String?
+  
+  // ============================================
+  // EMERGENCY CONTACTS
+  // ============================================
+  emergencyContactName    String?
+  emergencyContactPhone   String?
+  emergencyContactRelation String?
+  emergencyContactEmail   String?  // Email for primary emergency contact
+  emergencyContact2Name   String? // Secondary emergency contact
+  emergencyContact2Phone  String?
+  emergencyContact2Relation String?
+  emergencyContact2Email  String? // Email for secondary emergency contact
+  emergencyContacts       String? // JSON array for multiple emergency contacts [{name, relation, phone, email}]
+  
+  // ============================================
+  // EMERGENCY MEDICAL INFORMATION (Critical Alerts)
+  // ============================================
+  allergies               String?  // JSON array: [{name, severity, reaction}]
+  allergyCritical         Boolean  @default(false) // Has life-threatening allergies
+  bloodTypeEmergency      String?  // Formatted for emergency display
+  organDonorStatus        String?  // yes, no, not-specified
+  pregnancyStatus         String?  // pregnant, not-pregnant, unknown, not-applicable
+  estimatedDueDate        DateTime?
+  chronicConditions       String?  // JSON array of chronic conditions
+  implantedDevices        String?  // JSON array: [{device, location, date}]
+  
+  // ============================================
+  // SAFETY ALERTS (High Visibility)
+  // ============================================
+  fallRisk                Boolean  @default(false)
+  fallRiskLevel           String?  // low, medium, high
+  infectiousDiseaseStatus String?  // COVID-19, TB, MRSA, VRE, etc.
+  infectionIsolationType  String?  // contact, droplet, airborne, standard
+  dnrOrder                Boolean  @default(false) // Do Not Resuscitate
+  dnrOrderDate            DateTime?
+  dnrOrderPhysician       String?
+  isolationPrecautions    String?  // JSON array of precautions
+  highRiskMedications     String?  // JSON array: [{medication, reason}]
+  suicideRisk             Boolean  @default(false)
+  elopementRisk           Boolean  @default(false)
+  
+  // ============================================
+  // SOCIAL & CARE INFORMATION
+  // ============================================
+  languagePrimary         String?
+  languageSecondary       String?
+  interpreterNeeded       Boolean  @default(false)
+  religion                String?
+  religiousConsiderations String?  // Dietary, care restrictions
+  disabilityStatus        String?  // JSON array of disabilities
+  mobilityStatus          String?  // independent, assisted, wheelchair, bedbound
+  mobilityAid             String?  // cane, walker, wheelchair, prosthetic
+  caregiverName           String?
+  caregiverPhone          String?
+  caregiverRelation       String?
+  advanceDirective        Boolean  @default(false)
+  advanceDirectiveLocation String? // Location of advance directive document
+  healthcareProxyName     String?
+  healthcareProxyPhone    String?
+  
+  // ============================================
+  // CLINICAL METADATA
+  // ============================================
+  lastHospitalVisit       DateTime?
+  lastPhysicianName       String?
+  lastPhysicianSpecialty  String?
+  primaryCarePhysician    String?
+  primaryCareFacility     String?
+  triagePriority          String?  // emergent, urgent, less-urgent, non-urgent
+  totalAdmissions         Int      @default(0)
+  totalEdVisits           Int      @default(0)
+  
+  // ============================================
+  // INSURANCE & BILLING
+  // ============================================
+  insurancePrimary        String?  // Primary insurance name
+  insurancePrimaryId      String?  // Policy/member ID
+  insurancePrimaryGroup   String?  // Group number
+  insuranceSecondary      String?
+  insuranceSecondaryId    String?
+  insuranceVerified       Boolean  @default(false)
+  insuranceVerifiedDate   DateTime?
+  
+  // ============================================
+  // AI-READY DATA FIELDS
+  // ============================================
+  aiRiskScore             Float?   // Overall AI-computed risk score (0-1)
+  aiRiskLevel             String?  // low, medium, high, critical
+  aiRiskFactors           String?  // JSON array of identified risk factors
+  aiReadmissionRisk       Float?   // Readmission probability
+  aiMortalityRisk         Float?   // Mortality risk score
+  aiTriagePrediction      String?  // AI-predicted triage level
+  aiEmergencyAlerts       String?  // JSON array of AI-generated alerts
+  aiLastAssessment        DateTime?
+  aiPopulationHealthTag   String?  // Population health analytics tag
+  
+  // ============================================
+  // DIGITAL HEALTH ACCESS
+  // ============================================
+  qrCodeData              String?  // QR code payload for EHR access
+  qrCodeGenerated         DateTime?
+  nfcEnabled              Boolean  @default(false)
+  rfidTagId               String?  // RFID tracking tag
+  digitalAccessEnabled    Boolean  @default(false)
+  patientPortalAccess     Boolean  @default(false)
+  patientPortalLastAccess DateTime?
+  
+  // ============================================
+  // BIOMETRIC AUTHENTICATION
+  // ============================================
+  fingerprintRegistered   Boolean  @default(false)
+  fingerprintTemplateId   String?
+  irisScanRegistered      Boolean  @default(false)
+  irisScanTemplateId      String?
+  voicePrintRegistered    Boolean  @default(false)
+  voicePrintTemplateId    String?
+  
+  // ============================================
+  // METADATA
+  // ============================================
+  isActive                Boolean  @default(true)
+  lastSyncFromBahmni      DateTime?
+  patientPhoto            String?  // Base64 encoded photo or URL
+  cardPrintDate           DateTime?
+  cardExpiryDate          DateTime?
+  
+  // ============================================
+  // NOTES & ATTACHMENTS
+  // ============================================
+  notes                   String?  // General notes about patient
+  attachments             String?  // JSON array of file attachments [{name, url, type, uploadedAt}]
+  
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  
+  // ============================================
+  // RELATIONS
+  // ============================================
+  consultations           Consultation[]
+  medications             PatientMedication[]
+  documents               MedicalDocument[]
+  vitals                  VitalSigns[]
+  labOrders               LabOrder[]
+  labResults              LabResult[]
+  aiInteractions          AIInteraction[]
+  diagnoses               Diagnosis[]
+  voiceNotes              VoiceNote[]
+  smartCardAccess         SmartCardAccess[]
+  soapNotes               SoapNote[]
+  clinicalOrders          ClinicalOrder[]
+  prescriptions           Prescription[]
+  nurseTasks              NurseTask[]
+}
+
+/// Clinical consultations/encounters
+model Consultation {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  
+  // Consultation Details
+  consultationDate DateTime @default(now())
+  consultationType String   // outpatient, inpatient, emergency, follow-up
+  chiefComplaint   String?  // Main reason for visit
+  
+  // Clinical Notes (SOAP Format)
+  subjectiveNotes  String?  // Patient's description of symptoms
+  objectiveNotes   String?  // Clinical observations
+  assessment       String?  // Diagnosis/impression
+  plan             String?  // Treatment plan
+  
+  // AI Assistance
+  aiSummaryGenerated Boolean @default(false)
+  aiDiagnosisSuggestions String? // JSON array of AI-suggested diagnoses
+  
+  // Provider Info
+  providerName     String?
+  department       String?
+  
+  // Status
+  status           String   @default("in-progress") // in-progress, completed, cancelled
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  diagnoses        Diagnosis[]
+  medications      PatientMedication[]
+  documents        MedicalDocument[]
+  aiInteractions   AIInteraction[]
+  voiceNotes       VoiceNote[]
+}
+
+/// Patient diagnoses
+model Diagnosis {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  
+  // Diagnosis Details
+  icdCode         String?  // ICD-10 code
+  snomedCode      String?  // SNOMED CT code
+  diagnosisName   String
+  description     String?
+  
+  // Classification
+  diagnosisType   String   @default("primary") // primary, secondary, provisional, differential
+  severity        String?  // mild, moderate, severe
+  
+  // Status
+  status          String   @default("active") // active, resolved, chronic
+  diagnosedDate   DateTime @default(now())
+  resolvedDate    DateTime?
+  
+  // AI Confidence
+  aiSuggested     Boolean  @default(false)
+  aiConfidence    Float?   // 0.0 to 1.0
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Patient medications
+model PatientMedication {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  
+  // Medication Details
+  medicationName  String
+  genericName     String?
+  dosage          String?
+  frequency       String?  // once daily, twice daily, etc.
+  route           String?  // oral, IV, IM, etc.
+  duration        String?  // 7 days, 30 days, etc.
+  
+  // Prescriber
+  prescribedBy    String?
+  prescribedDate  DateTime @default(now())
+  
+  // Status
+  status          String   @default("active") // active, completed, discontinued, on-hold
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  
+  // AI Alerts
+  interactionAlerts String? // JSON array of drug interaction warnings
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Vital signs records - Enhanced with nurse attribution
+model VitalSigns {
+  id                    String   @id @default(cuid())
+  patientId             String
+  encounterId           String?
+  
+  // Vital measurements
+  temperature           Float?
+  temperatureUnit       String   @default("C")
+  bloodPressureSystolic Int?
+  bloodPressureDiastolic Int?
+  heartRate             Int?
+  respiratoryRate       Int?
+  oxygenSaturation      Float?
+  weight                Float?
+  weightUnit            String   @default("kg")
+  height                Float?
+  heightUnit            String   @default("cm")
+  bmi                   Float?
+  bloodGlucose          Float?
+  glucoseUnit           String   @default("mmol/L")
+  glucoseType           String?  // fasting, random
+  painScore             Int?
+  consciousnessLevel    String?  // Alert, Verbal, Pain, Unresponsive
+  
+  // Status flags (auto-calculated)
+  bpStatus              String?  // normal, warning, critical
+  hrStatus              String?
+  rrStatus              String?
+  spo2Status            String?
+  tempStatus            String?
+  glucoseStatus         String?
+  
+  // Attribution
+  recordedBy            String   // Employee ID
+  recordedByName        String?
+  recordedByRole        String?
+  recordedAt            DateTime @default(now())
+  
+  // Amendment tracking
+  isAmendment           Boolean  @default(false)
+  amendmentReason       String?
+  originalVitalsId     String?
+  
+  notes                 String?
+  
+  // Relations
+  patient               Patient  @relation(fields: [patientId], references: [id])
+  recorder              Employee @relation(fields: [recordedBy], references: [employeeId])
+  soapNotes             SoapNote[]
+  
+  @@map("vital_signs")
+}
+
+/// Lab Orders - Doctor orders lab tests
+model LabOrder {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  
+  // Order Details
+  orderNumber     String   @unique // LAB-2024-0001
+  orderDate       DateTime @default(now())
+  priority        String   @default("routine") // routine, urgent, stat
+  status          String   @default("pending") // pending, collected, in-lab, completed, cancelled
+  
+  // Clinical Info
+  clinicalNotes   String?  // Reason for test
+  diagnosis       String?  // Working diagnosis
+  
+  // Ordering Provider
+  orderedBy       String?  // Doctor name
+  department      String?
+  
+  // Sample Info
+  sampleCollected   Boolean @default(false)
+  collectedAt       DateTime?
+  collectedBy       String?  // Who collected the sample
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  orderItems      LabOrderItem[]
+  labResults      LabResult[]
+}
+
+/// Lab Order Items - Individual tests in an order
+model LabOrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           LabOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  // Test Details
+  testName        String
+  testCode        String?
+  category        String?  // haematology, chemistry, urinalysis, etc.
+  subcategory     String?  // CBC, Renal, Liver, etc.
+  
+  // Reference
+  unit            String?
+  referenceRange  String?
+  
+  // Status
+  status          String   @default("pending") // pending, collected, in-progress, completed, cancelled
+  
+  // Result (filled by lab technician)
+  resultValue     String?
+  interpretation  String?  // normal, abnormal, critical
+  resultNotes     String?
+  
+  // Timestamps
+  resultEnteredAt DateTime?
+  enteredBy       String?  // Lab technician
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Lab Results - Completed results (historical record)
+model LabResult {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  orderId         String?
+  order           LabOrder? @relation(fields: [orderId], references: [id])
+  
+  // Lab Details
+  testName        String
+  testCode        String?
+  category        String?  // blood, urine, imaging, etc.
+  
+  // Results
+  resultValue     String
+  unit            String?
+  referenceRange  String?
+  interpretation  String?  // normal, abnormal, critical
+  
+  // Dates
+  orderedDate     DateTime @default(now())
+  resultDate      DateTime?
+  
+  // AI Analysis
+  aiInterpretation String?
+  aiAlertFlag      Boolean @default(false)
+  
+  // Who entered
+  enteredBy       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// MEDICAL DOCUMENTS
+// ============================================
+
+model MedicalDocument {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  
+  // Document Info
+  documentType    String   // soap-note, discharge-summary, referral, lab-report, imaging
+  title           String
+  content         String   // Main content
+  
+  // AI Generated
+  aiGenerated     Boolean  @default(false)
+  aiModelUsed     String?
+  
+  // File attachments
+  fileUrl         String?
+  fileType        String?
+  
+  // Metadata
+  authoredBy      String?
+  authoredAt      DateTime @default(now())
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// AI INTERACTIONS & DECISION SUPPORT
+// ============================================
+
+model AIInteraction {
+  id              String   @id @default(cuid())
+  patientId       String?
+  patient         Patient? @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  
+  // Interaction Details
+  interactionType String   // diagnosis-support, drug-interaction, documentation, image-analysis
+  prompt          String   // User input/query
+  response        String   // AI response
+  
+  // AI Metadata
+  modelUsed       String?  // medgemma, gpt-4, etc.
+  tokensUsed      Int?
+  processingTime  Int?     // milliseconds
+  
+  // Quality & Safety
+  humanReviewed   Boolean  @default(false)
+  reviewerNotes   String?
+  safetyFlags     String?  // JSON array of safety concerns
+  
+  createdAt       DateTime @default(now())
+}
+
+// ============================================
+// VOICE NOTES
+// ============================================
+
+model VoiceNote {
+  id              String   @id @default(cuid())
+  patientId       String?
+  patient         Patient? @relation(fields: [patientId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  
+  // Audio metadata
+  audioDuration   Int?     // Duration in seconds
+  audioFormat     String?  // wav, mp3, webm
+  
+  // Transcription
+  transcription   String   // The transcribed text
+  status          String   @default("draft") // draft, reviewed, approved
+  
+  // Tagging
+  tags            String?  // JSON array of medical tags/keywords
+  
+  // Note type and field
+  noteType        String   @default("general") // soap-subjective, soap-objective, soap-assessment, soap-plan, general
+  targetField     String?  // Which field this note is for
+  
+  // Metadata
+  recordedBy      String?
+  recordedAt      DateTime @default(now())
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// DRUG DATABASE
+// ============================================
+
+model Drug {
+  id              String   @id @default(cuid())
+  
+  // Drug Identification
+  name            String
+  genericName     String?
+  brandNames      String?  // JSON array
+  
+  // Classification
+  drugClass       String?
+  therapeuticClass String?
+  atcCode         String?  // ATC classification code
+  
+  // Dosage Information
+  standardDosage  String?
+  dosageForms     String?  // JSON array: tablet, capsule, injection, etc.
+  
+  // Safety Information
+  contraindications String? // JSON array
+  sideEffects     String?  // JSON array
+  pregnancyCategory String?
+  
+  // Interactions
+  drugInteractions String? // JSON array of interacting drugs
+  
+  // Metadata
+  isActive        Boolean  @default(true)
+  lastUpdated     DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+// ============================================
+// SYSTEM CONFIGURATION
+// ============================================
+
+model BahmniIntegration {
+  id              String   @id @default(cuid())
+  
+  // Connection Settings
+  bahmniUrl       String
+  apiEndpoint     String   // FHIR endpoint URL
+  authType        String   @default("basic") // basic, oauth2, api-key
+  
+  // Credentials (encrypted in production)
+  username        String?
+  password        String?
+  apiKey          String?
+  accessToken     String?
+  
+  // Sync Settings
+  syncEnabled     Boolean  @default(true)
+  lastSyncAt      DateTime?
+  syncInterval    Int      @default(60) // minutes
+  
+  // Status
+  connectionStatus String  @default("disconnected")
+  lastError       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model OdooIntegration {
+  id              String   @id @default(cuid())
+  
+  // Connection Settings
+  odooUrl         String   // e.g., https://your-company.odoo.com
+  database        String?  // Odoo database name
+  authType        String   @default("api-key") // api-key, oauth2
+  
+  // Credentials (encrypted in production)
+  apiKey          String?
+  username        String?
+  password        String?
+  
+  // Sync Settings
+  syncEnabled     Boolean  @default(false)
+  lastSyncAt      DateTime?
+  syncInterval    Int      @default(30) // minutes
+  
+  // Modules to sync
+  syncPayments    Boolean  @default(true)
+  syncInvoices    Boolean  @default(true)
+  syncCRM         Boolean  @default(true)
+  syncAccounting  Boolean  @default(true)
+  syncSales       Boolean  @default(true)
+  
+  // Status
+  connectionStatus String  @default("disconnected")
+  lastError       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SystemSettings {
+  id              String   @id @default(cuid())
+  
+  // AI Configuration
+  aiModel         String   @default("medgemma")
+  aiTemperature   Float    @default(0.7)
+  aiMaxTokens     Int      @default(2048)
+  
+  // Feature Flags
+  enableClinicalDecisionSupport Boolean @default(true)
+  enableDrugInteractionCheck    Boolean @default(true)
+  enableImageAnalysis           Boolean @default(true)
+  enableVoiceTranscription      Boolean @default(true)
+  
+  // Safety Settings
+  requireHumanReview     Boolean @default(true)
+  logAllInteractions     Boolean @default(true)
+  safetyAlertThreshold   Float   @default(0.8)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Integration sync logs for auditing
+model IntegrationSyncLog {
+  id              String   @id @default(cuid())
+  
+  // Integration info
+  integrationType String   // bahmni, odoo
+  module          String   // patients, invoices, etc.
+  
+  // Sync details
+  syncDirection   String   @default("inbound") // inbound, outbound
+  recordsSynced   Int      @default(0)
+  recordsFailed   Int      @default(0)
+  
+  // Status
+  status          String   @default("pending") // pending, success, partial, failed
+  errorMessage    String?
+  
+  // Timing
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  duration        Int?     // milliseconds
+  
+  createdAt       DateTime @default(now())
+}
+
+// ============================================
+// REINFORCEMENT LEARNING
+// ============================================
+
+/// RL Arm - represents a suggestion type that can be learned
+model RLArm {
+  id              String   @id @default(cuid())
+  armKey          String   @unique // Unique identifier for the arm
+  armType         String   // diagnosis, treatment, medication, documentation
+  category        String   // Specific category within type
+  
+  // Q-Learning parameters
+  qValue          Float    @default(0.5) // Current estimated value
+  
+  // Thompson Sampling parameters (Beta distribution)
+  alpha           Float    @default(1.0) // Success count + 1
+  beta            Float    @default(1.0) // Failure count + 1
+  
+  // Statistics
+  totalPulls      Int      @default(0) // Total times this arm was selected
+  totalRewards    Float    @default(0) // Sum of all rewards
+  averageReward   Float    @default(0) // Average reward
+  
+  // Acceptance metrics
+  acceptCount     Int      @default(0)
+  rejectCount     Int      @default(0)
+  acceptanceRate  Float    @default(0)
+  
+  // Rating metrics (1-5 stars)
+  totalRatings    Int      @default(0)
+  ratingSum       Float    @default(0)
+  avgRating       Float    @default(0)
+  
+  // Metadata
+  isActive        Boolean  @default(true)
+  lastUpdated     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  feedbackHistory RLFeedback[]
+}
+
+/// RL Feedback - individual feedback records
+model RLFeedback {
+  id              String   @id @default(cuid())
+  armId           String
+  arm             RLArm    @relation(fields: [armId], references: [id])
+  
+  // Feedback type
+  feedbackType    String   // accept, reject, rating, helpful, not-helpful
+  
+  // Values
+  rating          Float?   // 1-5 stars if applicable
+  reward          Float    // Calculated reward value (0-1)
+  
+  // Context
+  context         String?  // JSON context data (patient info, consultation, etc.)
+  suggestionType  String?  // What type of suggestion was given
+  suggestionText  String?  // The actual suggestion
+  
+  // Metadata
+  sessionId       String?  // To track feedback within a session
+  userId          String?  // User who provided feedback
+  
+  createdAt       DateTime @default(now())
+}
+
+// ============================================
+// RAG HEALTHCARE KNOWLEDGE BASE
+// ============================================
+
+/// Healthcare Knowledge Base for RAG
+model HealthcareKnowledge {
+  id              String   @id @default(cuid())
+  
+  // Content
+  title           String
+  content         String   // Main knowledge content
+  summary         String?  // Brief summary for quick retrieval
+  
+  // Classification
+  category        String   // drug-interaction, clinical-guideline, symptom, condition, treatment, lab-interpretation
+  subcategory     String?  // More specific classification
+  specialty       String?  // cardiology, neurology, general, etc.
+  
+  // Tags for semantic search (stored as JSON array)
+  keywords        String?  // JSON array of keywords
+  icdCodes        String?  // JSON array of related ICD-10 codes
+  snomedCodes     String?  // JSON array of related SNOMED codes
+  drugNames       String?  // JSON array of related drug names
+  
+  // Vector Embeddings for Semantic Search
+  embedding       String?  // JSON array of embedding vector (768 dimensions)
+  embeddingHash   String?  // Hash of content for cache validation
+  embeddingModel  String?  @default("semantic-v1") // Embedding model version
+  
+  // Source Information
+  source          String?  // clinical-guideline, drug-database, research-paper, who, cdc
+  sourceUrl       String?
+  sourceDate      DateTime?
+  evidenceLevel   String?  // A, B, C, D (evidence-based medicine levels)
+  
+  // Content metadata
+  language        String   @default("en")
+  version         String?
+  lastReviewed    DateTime?
+  isActive        Boolean  @default(true)
+  
+  // Usage statistics for RAG optimization
+  retrievalCount  Int      @default(0)
+  usefulnessScore Float    @default(0.5)  // 0-1 based on feedback
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  feedback        KnowledgeFeedback[]
+  
+  @@index([category])
+  @@index([specialty])
+  @@index([isActive])
+}
+
+/// RAG Query Log - tracks queries for optimization
+model RAGQuery {
+  id              String   @id @default(cuid())
+  
+  // Query details
+  queryText       String
+  queryType       String   // text, voice, clinical-question, drug-check
+  
+  // Retrieved knowledge
+  knowledgeIds    String?  // JSON array of HealthcareKnowledge IDs retrieved
+  retrievalCount  Int      @default(0)
+  
+  // AI Response
+  aiResponse      String?
+  responseTime    Int?     // milliseconds
+  
+  // Quality feedback
+  wasHelpful      Boolean?
+  userRating      Int?     // 1-5 stars
+  
+  // Context
+  patientId       String?
+  consultationId  String?
+  userId          String?
+  
+  createdAt       DateTime @default(now())
+}
+
+/// Drug Interaction Knowledge (specialized for drug checking)
+model DrugInteractionKnowledge {
+  id              String   @id @default(cuid())
+  
+  // Drugs involved
+  drug1Name       String
+  drug1Generic    String?
+  drug2Name       String
+  drug2Generic    String?
+  
+  // Interaction details
+  severity        String   // contraindicated, major, moderate, minor, none
+  mechanism       String?  // pharmacokinetic, pharmacodynamic
+  description     String
+  clinicalEffects String?  // JSON array of effects
+  management      String?  // How to manage the interaction
+  
+  // Vector Embeddings for Semantic Search
+  embedding       String?  // JSON array of embedding vector
+  embeddingHash   String?  // Hash of content for cache validation
+  
+  // Evidence
+  evidenceLevel   String?
+  literatureRef   String?
+  
+  // Time factors
+  onset           String?  // rapid, delayed
+  duration        String?
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([drug1Name])
+  @@index([drug2Name])
+  @@index([severity])
+}
+
+/// Clinical Guideline Knowledge
+model ClinicalGuidelineKnowledge {
+  id              String   @id @default(cuid())
+  
+  // Guideline info
+  title           String
+  guidelineId     String?  // External guideline ID
+  organization    String?  // WHO, CDC, AHA, etc.
+  
+  // Content
+  condition       String   // Condition this guideline addresses
+  icdCode         String?
+  summary         String
+  fullContent     String
+  
+  // Classification
+  specialty       String?
+  patientGroup    String?  // adult, pediatric, geriatric, pregnancy
+  
+  // Recommendations (JSON array)
+  recommendations String?
+  diagnosticCriteria String?
+  treatmentOptions String?
+  
+  // Evidence
+  evidenceLevel   String?
+  lastUpdated     DateTime?
+  validUntil      DateTime?
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Symptom Condition Mapping (for differential diagnosis)
+model SymptomConditionMapping {
+  id              String   @id @default(cuid())
+  
+  // Symptom details
+  symptomName     String
+  symptomCategory String?  // pain, respiratory, cardiac, neurological, etc.
+  
+  // Related conditions (JSON array of condition objects)
+  conditions      String   // JSON: [{condition, icdCode, probability, urgency}]
+  
+  // Context modifiers
+  ageGroup        String?  // pediatric, adult, geriatric
+  genderSpecific  String?  // male, female, null for both
+  riskFactors     String?  // JSON array of associated risk factors
+  
+  // Diagnostic value
+  sensitivity     Float?   // 0-1
+  specificity     Float?   // 0-1
+  positiveLikelihoodRatio Float?
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// LLM INTEGRATIONS (SSOT for AI Providers)
+// ============================================
+
+/// LLM Integration - Single Source of Truth for AI providers
+model LLMIntegration {
+  id              String   @id @default(cuid())
+  
+  // Provider identification
+  provider        String   // zai, openai, gemini, claude, ollama, other
+  displayName     String   // User-friendly name
+  
+  // Connection settings
+  baseUrl         String?  // API endpoint URL (for custom/ollama)
+  username        String?  // Optional username for auth
+  password        String?  // Optional password for auth (encrypted)
+  apiKey          String?  // Encrypted API key
+  
+  // Model configuration
+  model           String   // Model identifier (gpt-4, gemini-pro, etc.)
+  
+  // Priority & Selection
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  priority        Int      @default(0)  // Higher = higher priority
+  
+  // Advanced settings (JSON)
+  settings        String?  // JSON: { temperature, maxTokens, topP, etc. }
+  
+  // Notes
+  notes           String?  // Description or notes
+  
+  // Usage tracking
+  totalRequests   Int      @default(0)
+  lastUsed        DateTime?
+  lastError       String?  // Last error message if any
+  
+  // Connection status
+  connectionStatus String  @default("untested") // untested, connected, failed
+  
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([provider])
+  @@index([isActive, isDefault])
+}
+
+// ============================================
+// RAG SERVICE CONFIGURATION (SSOT)
+// ============================================
+
+/// RAG Service Configuration - Single Source of Truth for RAG services
+model RAGServiceConfig {
+  id              String   @id @default(cuid())
+
+  // Service Identification
+  serviceName     String   @unique // "medical-rag", "langchain-rag"
+  displayName     String   // "Medical RAG", "LangChain RAG"
+  description     String?  // Brief description of the service
+
+  // Connection Settings
+  serviceUrl      String   // Full URL including port: http://localhost:3031
+  port            Int      // 3031, 3032, etc.
+  healthEndpoint  String   @default("/health")
+
+  // Service Type & Capabilities
+  serviceType     String   @default("rag") // rag, asr, tts, embedding
+  capabilities    String?  // JSON array: ["query", "ingest", "sync"]
+
+  // Priority & Selection
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  priority        Int      @default(0)  // Higher = higher priority
+
+  // Advanced Settings (JSON)
+  settings        String?  // JSON: { topK, minScore, embeddingModel, etc. }
+
+  // Status
+  connectionStatus String  @default("untested") // untested, connected, failed
+  lastHealthCheck  DateTime?
+  lastError        String?
+  responseTimeMs   Int?     // Last health check response time
+
+  // Statistics
+  totalRequests   Int      @default(0)
+  successfulRequests Int   @default(0)
+  failedRequests  Int      @default(0)
+  averageLatency  Float?   // Average response time in ms
+
+  // Metadata
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([serviceName])
+  @@index([isActive, isDefault])
+  @@index([serviceType])
+}
+
+// ============================================
+// KNOWLEDGE FEEDBACK FOR RAG IMPROVEMENT
+// ============================================
+
+/// Knowledge Feedback - User feedback on knowledge entries
+model KnowledgeFeedback {
+  id              String   @id @default(cuid())
+  knowledgeId     String
+  knowledge       HealthcareKnowledge @relation(fields: [knowledgeId], references: [id])
+  
+  // Feedback type
+  feedbackType    String   // helpful, not-helpful, inaccurate, outdated, suggestion
+  
+  // Details
+  rating          Int?     // 1-5 stars
+  comment         String?  // User comment
+  
+  // Context
+  queryText       String?  // The query that led to this feedback
+  
+  // Metadata
+  userId          String?
+  sessionId       String?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([knowledgeId])
+  @@index([feedbackType])
+}
+
+// ============================================
+// EMBEDDING INDEX FOR SEMANTIC SEARCH
+// ============================================
+
+/// Embedding Cache - Stores precomputed embeddings for faster search
+model EmbeddingCache {
+  id              String   @id @default(cuid())
+  
+  // Content identification
+  contentHash     String   @unique // Hash of the content
+  contentType     String   // healthcare-knowledge, drug-interaction, etc.
+  contentId       String   // ID of the source content
+  
+  // Embedding data
+  embedding       String   // JSON array of embedding vector
+  embeddingModel  String   @default("semantic-v1")
+  
+  // Metadata
+  contentLength   Int      // Length of original content
+  lastAccessed    DateTime @default(now())
+  accessCount     Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([contentHash])
+  @@index([contentType])
+}
+
+// ============================================
+// SMART CARD ACCESS LOG
+// ============================================
+
+/// Smart Card Access Log - Track when and where patient card is scanned
+model SmartCardAccess {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  
+  // Access details
+  accessType      String   // check-in, consultation, emergency, pharmacy, lab
+  accessLocation  String?  // Facility/location name
+  accessPoint     String?  // Specific access point (reception, ED, etc.)
+  
+  // Scanner info
+  scannedBy       String?  // User who scanned the card
+  scannerDeviceId String?  // Device ID that scanned the card
+  
+  // Method
+  scanMethod      String   // qr, nfc, rfid, manual
+  
+  // Timestamp
+  accessedAt      DateTime @default(now())
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([patientId])
+  @@index([accessType])
+  @@index([accessedAt])
+}
+
+// ============================================
+// EMPLOYEE & IAM
+// ============================================
+
+/// Employee/Staff Model for IAM
+model Employee {
+  id                String   @id @default(uuid())
+  employeeId        String   @unique  // Hospital employee ID
+  firstName         String
+  lastName          String
+  email             String   @unique
+  phone             String?
+  role              String   // doctor, nurse, admin, specialist, pharmacist, receptionist
+  department        String?
+  specialty         String?
+  licenseNumber     String?
+  isActive          Boolean  @default(true)
+  hireDate          DateTime @default(now())
+  lastLogin         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  vitalsRecords     VitalSigns[]
+  soapNotes         SoapNote[]        @relation("SoapNotesByAuthor")
+  soapNotesEdited   SoapNote[]        @relation("SoapNotesByEditor")
+  soapNotesSigned   SoapNote[]        @relation("SoapNotesBySigner")
+  soapAddenda       SoapAddendum[]
+  auditLogs         AuditLog[]
+  clinicalOrders    ClinicalOrder[]
+  prescriptions     Prescription[]
+  nurseTasksAssigned NurseTask[]      @relation("NurseTasksByAssigner")
+  nurseTasksReceived NurseTask[]      @relation("NurseTasksByAssignee")
+  
+  @@map("employees")
+}
+
+// ============================================
+// SOAP NOTES & CLINICAL DOCUMENTATION
+// ============================================
+
+/// Enhanced SOAP Note Model
+model SoapNote {
+  id                String   @id @default(uuid())
+  encounterId       String   @unique
+  patientId         String
+  
+  // SUBJECTIVE Section
+  chiefComplaint    String?  // TEXT
+  hpiOnset          String?
+  hpiLocation       String?
+  hpiDuration       String?
+  hpiCharacter      String?
+  hpiAggravating    String?
+  hpiRelieving      String?
+  hpiTiming         String?
+  hpiSeverity       Int?     // 0-10 pain scale
+  hpiNarrative      String?  // TEXT
+  rosConstitutional String?  // TEXT
+  rosHeent          String?  // TEXT
+  rosCardiovascular String?  // TEXT
+  rosRespiratory    String?  // TEXT
+  rosGastrointestinal String? // TEXT
+  rosGenitourinary  String?  // TEXT
+  rosMusculoskeletal String? // TEXT
+  rosNeurological   String?  // TEXT
+  rosPsychiatric    String?  // TEXT
+  rosEndocrine      String?  // TEXT
+  rosHematologic    String?  // TEXT
+  rosSkin           String?  // TEXT
+  pmhUpdate         String?  // TEXT
+  pshUpdate         String?  // TEXT
+  familyHistory     String?  // TEXT
+  socialHistory     String?  // TEXT
+  medicationsReview String?  // TEXT
+  allergiesConfirmed Boolean @default(false)
+  obgynHistory      String?  // TEXT
+  
+  // OBJECTIVE Section
+  vitalsId          String?  // Reference to VitalSigns
+  generalAppearance String?  // TEXT
+  peConstitutional  String?  // TEXT
+  peHeent           String?  // TEXT
+  peCardiovascular  String?  // TEXT
+  peRespiratory     String?  // TEXT
+  peGastrointestinal String? // TEXT
+  peGenitourinary   String?  // TEXT
+  peMusculoskeletal String?  // TEXT
+  peNeurological    String?  // TEXT
+  pePsychiatric     String?  // TEXT
+  peSkin            String?  // TEXT
+  diagnosticResults String?  // TEXT
+  functionalAssessment String? // TEXT
+  
+  // ASSESSMENT Section
+  primaryDiagnosisCode    String?
+  primaryDiagnosisDesc    String?
+  differential1Code       String?
+  differential1Desc       String?
+  differential1Confidence String?  // Likely, Possible, Rule Out
+  differential2Code       String?
+  differential2Desc       String?
+  differential2Confidence String?
+  differential3Code       String?
+  differential3Desc       String?
+  differential3Confidence String?
+  differential4Code       String?
+  differential4Desc       String?
+  differential4Confidence String?
+  differential5Code       String?
+  differential5Desc       String?
+  differential5Confidence String?
+  clinicalReasoning       String?  // TEXT
+  problemListUpdates      String?  // TEXT
+  riskFlags              String?  // TEXT  // JSON array of risk flags
+  
+  // PLAN Section
+  investigationsOrdered  String?  // TEXT
+  medicationsPrescribed  String?  // TEXT
+  referrals             String?  // TEXT
+  patientEducation      String?  // TEXT
+  followUpDate          DateTime?
+  followUpMode          String?
+  followUpClinician     String?
+  nursingInstructions   String?  // TEXT
+  disposition           String?  // discharge, admit, observation, transfer
+  dispositionDestination String?
+  dispositionReason     String?  // TEXT
+  
+  // Status & Metadata
+  status              String   @default("draft")  // draft, signed, amended
+  signedAt            DateTime?
+  signedBy            String?  // Employee ID
+  lockVersion         Int      @default(0)
+  
+  // AI Assistance
+  aiSuggestionsUsed   Boolean  @default(false)
+  aiConfidence        Float?
+  
+  // Audit
+  createdBy           String   // Employee ID
+  lastEditedBy        String?  // Employee ID
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relations
+  patient             Patient  @relation(fields: [patientId], references: [id])
+  vitals              VitalSigns? @relation(fields: [vitalsId], references: [id])
+  author              Employee @relation("SoapNotesByAuthor", fields: [createdBy], references: [employeeId])
+  editor              Employee? @relation("SoapNotesByEditor", fields: [lastEditedBy], references: [employeeId])
+  signer              Employee? @relation("SoapNotesBySigner", fields: [signedBy], references: [employeeId])
+  addenda             SoapAddendum[]
+  orders              ClinicalOrder[]
+  prescriptions       Prescription[]
+  nurseTasks          NurseTask[]
+  
+  @@map("soap_notes")
+}
+
+/// SOAP Note Addendum
+model SoapAddendum {
+  id                String   @id @default(uuid())
+  soapNoteId        String
+  addendumText      String   // TEXT
+  reason            String?
+  authoredBy        String   // Employee ID
+  authoredAt        DateTime @default(now())
+  
+  soapNote          SoapNote @relation(fields: [soapNoteId], references: [id])
+  author            Employee @relation(fields: [authoredBy], references: [employeeId])
+  
+  @@map("soap_addenda")
+}
+
+// ============================================
+// CLINICAL ORDERS
+// ============================================
+
+/// Clinical Orders (Labs, Imaging, Procedures)
+model ClinicalOrder {
+  id                String   @id @default(uuid())
+  soapNoteId        String?
+  patientId         String
+  
+  orderType         String   // lab, imaging, procedure
+  orderName         String
+  orderDetails      String?  // TEXT
+  urgency           String   @default("routine")  // routine, urgent, stat
+  status            String   @default("pending")  // pending, ordered, in-progress, completed, cancelled
+  
+  orderedBy         String   // Employee ID
+  orderedAt         DateTime @default(now())
+  reviewedAt        DateTime?
+  reviewedBy        String?
+  completedAt       DateTime?
+  
+  soapNote          SoapNote? @relation(fields: [soapNoteId], references: [id])
+  patient           Patient @relation(fields: [patientId], references: [id])
+  orderer           Employee @relation(fields: [orderedBy], references: [employeeId])
+  
+  @@map("clinical_orders")
+}
+
+/// Prescriptions
+model Prescription {
+  id                String   @id @default(uuid())
+  soapNoteId        String?
+  patientId         String
+  
+  drugName          String
+  dosage            String
+  frequency         String
+  duration          String?
+  quantity          Int?
+  refills           Int      @default(0)
+  instructions      String?  // TEXT
+  
+  // Safety checks
+  allergyCheckPassed Boolean @default(false)
+  interactionCheckPassed Boolean @default(false)
+  safetyWarnings    String?  // TEXT
+  
+  status            String   @default("active")  // active, completed, cancelled, held
+  
+  prescribedBy      String   // Employee ID
+  prescribedAt      DateTime @default(now())
+  dispensedAt       DateTime?
+  dispensedBy       String?
+  
+  soapNote          SoapNote? @relation(fields: [soapNoteId], references: [id])
+  patient           Patient @relation(fields: [patientId], references: [id])
+  prescriber        Employee @relation(fields: [prescribedBy], references: [employeeId])
+  
+  @@map("prescriptions")
+}
+
+/// Nurse Tasks (from doctor's instructions)
+model NurseTask {
+  id                String   @id @default(uuid())
+  soapNoteId        String
+  patientId         String
+  
+  taskDescription   String   // TEXT
+  priority          String   @default("routine")  // routine, urgent, stat
+  status            String   @default("pending")  // pending, in-progress, completed, cancelled
+  
+  assignedBy        String   // Employee ID (doctor)
+  assignedTo        String?  // Employee ID (nurse)
+  assignedAt        DateTime @default(now())
+  dueBy             DateTime?
+  completedAt       DateTime?
+  completedBy       String?
+  notes             String?  // TEXT
+  
+  soapNote          SoapNote @relation(fields: [soapNoteId], references: [id])
+  patient           Patient @relation(fields: [patientId], references: [id])
+  assigner          Employee @relation("NurseTasksByAssigner", fields: [assignedBy], references: [employeeId])
+  assignee          Employee? @relation("NurseTasksByAssignee", fields: [assignedTo], references: [employeeId])
+  
+  @@map("nurse_tasks")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+/// Immutable Audit Log
+model AuditLog {
+  id                String   @id @default(uuid())
+  
+  actorId           String   // Employee ID
+  actorName         String
+  actorRole         String
+  actorDepartment   String?
+  
+  actionType        String   // create, read, update, delete, sign, amend, export
+  resourceType      String   // patient, soap_note, vitals, prescription, etc.
+  resourceId        String?
+  patientMrn        String?
+  
+  fieldChanged      String?
+  oldValue          String?  // TEXT
+  newValue          String?  // TEXT
+  
+  ipAddress         String?
+  userAgent         String?
+  
+  timestamp         DateTime @default(now())
+  
+  actor             Employee @relation(fields: [actorId], references: [employeeId])
+  
+  @@index([actorId])
+  @@index([patientMrn])
+  @@index([actionType])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================
+// ICD CODES REFERENCE
+// ============================================
+
+/// ICD Codes Reference
+model ICDCode {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  description       String   // TEXT
+  category          String?
+  chapter           String?
+  isICD11           Boolean  @default(false)
+  
+  @@map("icd_codes")
+}

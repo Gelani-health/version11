@@ -1,0 +1,112 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+.nyc_output/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Production
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+dev.log
+server.log
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Database
+*.db
+*.db-journal
+db/*.db
+db/*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Debug
+.debug/
+
+# Cache
+.cache/
+.temp/
+.tmp/
+
+# Uploaded files
+uploads/
+
+# Logs
+logs/
+*.log
+
+# Mini services
+mini-services/*/node_modules/
+
+# Build outputs
+.standalone/
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Download folder (if any generated files)
+download/
+
+# Skills documentation (SDK files)
+skills/
+
+# Examples
+examples/
+
+# Work logs
+worklog.md
+
+# Caddyfile (server config)
+Caddyfile
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+*.egg-info/
+dist/
+build/

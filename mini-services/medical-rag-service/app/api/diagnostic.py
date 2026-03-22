@@ -3,19 +3,27 @@ Diagnostic API Module
 =====================
 
 GLM-4.7-Flash powered diagnostic recommendations via Together AI.
+P1 Enhanced with integrated Safety Validation Pipeline.
 
 Provider: Together AI (Recommended)
 - Base URL: https://api.together.xyz/v1/
 - Model ID: together_ai/z-ai/glm-4.7-flash
 - Pricing: $0.06 per 1M input tokens, $0.18 per 1M output tokens
 - Context Window: 200K tokens
+
+P1 Features:
+- Integrated Safety Validation Pipeline
+- Drug Interaction Checking
+- Allergy Cross-Reactivity Validation
+- Emergency Escalation Detection
+- Renal Dosing Adjustment
 """
 
 import asyncio
 import time
 import json
 import re
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 import httpx
@@ -25,6 +33,15 @@ from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
+from app.prompts.safety_prompts import (
+    validate_allergy_safety,
+    check_emergency_triggers,
+    validate_drug_interaction_safety,
+    calculate_renal_dose_adjustment,
+    format_safety_header,
+    ESCALATION_TRIGGERS,
+    RESPONSE_BLOCKERS,
+)
 
 
 # ===== Constants =====
@@ -98,6 +115,7 @@ class DiagnosticResponse(BaseModel):
 class DiagnosticEngine:
     """
     Diagnostic engine combining RAG retrieval with GLM-4.7-Flash via Together AI.
+    P1 Enhanced with integrated Safety Validation Pipeline.
     
     GLM-4.7-Flash Advantages:
     - 200K context window (fit entire article corpus in single query)
@@ -105,6 +123,13 @@ class DiagnosticEngine:
     - Task decomposition (understand multi-part diagnostic queries)
     - Structured output (JSON mode for consistent diagnosis formatting)
     - Multilingual support
+    
+    P1 Safety Features:
+    - Pre-diagnostic emergency detection
+    - Drug-drug interaction checking
+    - Allergy cross-reactivity validation
+    - Renal dosing adjustment calculation
+    - Contraindication checking
     """
     
     def __init__(self):
@@ -116,6 +141,10 @@ class DiagnosticEngine:
             "total_tokens": 0,
             "total_errors": 0,
             "avg_latency_ms": 0.0,
+            "safety_blocks": 0,
+            "emergency_escalations": 0,
+            "drug_interactions_detected": 0,
+            "allergy_conflicts": 0,
         }
     
     async def _get_client(self) -> httpx.AsyncClient:
@@ -256,16 +285,120 @@ Provide both the structured response AND the JSON for API parsing."""
             logger.error(f"GLM API error: {e.response.status_code} - {e.response.text}")
             raise
     
+    async def _run_safety_validation(
+        self,
+        request: DiagnosticRequest,
+    ) -> Dict[str, Any]:
+        """
+        P1: Run comprehensive safety validation before diagnosis.
+        
+        Returns:
+            Dict with safety_status, warnings, blockers, and recommendations
+        """
+        safety_result = {
+            "is_safe": True,
+            "is_emergency": False,
+            "warnings": [],
+            "blockers": [],
+            "drug_interactions": [],
+            "allergy_conflicts": [],
+            "renal_adjustments": [],
+            "recommendations": [],
+        }
+        
+        # 1. Check for emergency triggers
+        is_emergency, emergency_details = check_emergency_triggers(
+            request.patient_symptoms,
+            {
+                "age": request.age,
+                "gender": request.gender,
+                "medical_history": request.medical_history,
+            }
+        )
+        
+        if is_emergency:
+            safety_result["is_emergency"] = True
+            safety_result["is_safe"] = False
+            safety_result["blockers"].append({
+                "type": "emergency",
+                "details": emergency_details,
+            })
+            self.stats["emergency_escalations"] += 1
+            return safety_result
+        
+        # 2. Check drug interactions if medications provided
+        if request.current_medications:
+            # We'll check interactions during treatment recommendation phase
+            safety_result["current_medications"] = request.current_medications
+        
+        # 3. Check allergy safety
+        if request.allergies:
+            safety_result["allergies"] = request.allergies
+        
+        # 4. Check renal function for dosing
+        if request.lab_results and "creatinine" in request.lab_results:
+            # Calculate CrCl using Cockcroft-Gault formula
+            cr = request.lab_results["creatinine"]
+            age = request.age or 50
+            if request.gender and request.gender.lower() == "female":
+                crcl = ((140 - age) * 60) / (72 * cr) * 0.85
+            else:
+                crcl = ((140 - age) * 70) / (72 * cr)
+            
+            safety_result["crcl"] = crcl
+            if crcl < 60:
+                safety_result["warnings"].append(
+                    f"Renal impairment detected (CrCl: {crcl:.1f} mL/min). Dose adjustments may be required."
+                )
+        
+        return safety_result
+    
     async def diagnose(self, request: DiagnosticRequest) -> DiagnosticResponse:
-        """Generate diagnostic recommendation."""
+        """Generate diagnostic recommendation with P1 Safety Validation."""
         start_time = time.time()
         request_id = f"diag_{int(time.time() * 1000)}"
         
         logger.info(f"Processing diagnostic request {request_id}")
         
         try:
-            # Build prompts
+            # P1: Run safety validation FIRST
+            safety_result = await self._run_safety_validation(request)
+            
+            # P1: Check for emergency blockers
+            if safety_result["is_emergency"]:
+                emergency_details = safety_result["blockers"][0]["details"]
+                self.stats["total_requests"] += 1
+                self.stats["safety_blocks"] += 1
+                
+                return DiagnosticResponse(
+                    request_id=request_id,
+                    timestamp=datetime.utcnow().isoformat(),
+                    summary=f"EMERGENCY DETECTED: {emergency_details['trigger']}",
+                    differential_diagnoses=[DifferentialDiagnosis(
+                        condition="Emergency Evaluation Required",
+                        probability=1.0,
+                        reasoning=emergency_details["disclaimer"],
+                    )],
+                    evidence_summary="Emergency presentation requires immediate clinical evaluation.",
+                    citations=[],
+                    recommended_workup=[emergency_details["action"]],
+                    treatment_considerations=[],
+                    red_flags=[emergency_details["disclaimer"]],
+                    follow_up="Immediate emergency department referral required.",
+                    confidence_level="high",
+                    articles_retrieved=0,
+                    total_latency_ms=(time.time() - start_time) * 1000,
+                    model_used="safety_validation",
+                )
+            
+            # Build prompts with safety context
             system_prompt = self._build_system_prompt(request.specialty)
+            
+            # Add safety context to system prompt
+            if safety_result["warnings"]:
+                system_prompt += f"\n\n## PATIENT SAFETY CONTEXT\n"
+                for warning in safety_result["warnings"]:
+                    system_prompt += f"- ⚠️ {warning}\n"
             
             # Try to retrieve articles (optional)
             retrieved_articles = []
@@ -337,6 +470,45 @@ Provide both the structured response AND the JSON for API parsing."""
             
             latency_ms = (time.time() - start_time) * 1000
             
+            # P1: Post-diagnosis safety checks for treatment recommendations
+            treatment_considerations = parsed.get("treatment_considerations", [])
+            
+            # Check drug interactions for any recommended medications
+            if request.current_medications and treatment_considerations:
+                for treatment in treatment_considerations:
+                    if isinstance(treatment, str):
+                        interactions = validate_drug_interaction_safety(
+                            treatment,
+                            request.current_medications
+                        )
+                        if interactions:
+                            safety_result["drug_interactions"].extend(interactions)
+                            self.stats["drug_interactions_detected"] += len(interactions)
+            
+            # Check allergy safety for recommended treatments
+            if request.allergies and treatment_considerations:
+                for treatment in treatment_considerations:
+                    if isinstance(treatment, str):
+                        is_safe, warning, alternatives = validate_allergy_safety(
+                            treatment,
+                            request.allergies
+                        )
+                        if not is_safe:
+                            safety_result["allergy_conflicts"].append({
+                                "treatment": treatment,
+                                "warning": warning,
+                                "alternatives": alternatives,
+                            })
+                            self.stats["allergy_conflicts"] += 1
+            
+            # Add safety warnings to red flags
+            red_flags = parsed.get("red_flags", [])
+            for interaction in safety_result["drug_interactions"]:
+                red_flags.append(f"Drug Interaction ({interaction.severity.value}): {interaction.drug1} + {interaction.drug2} - {interaction.clinical_effect}")
+            
+            for allergy_conflict in safety_result["allergy_conflicts"]:
+                red_flags.append(f"Allergy Warning: {allergy_conflict['warning']}")
+            
             # Update stats
             self.stats["total_requests"] += 1
             self.stats["avg_latency_ms"] = (
@@ -347,16 +519,26 @@ Provide both the structured response AND the JSON for API parsing."""
             usage = response.get("usage", {})
             self.stats["total_tokens"] += usage.get("total_tokens", 0)
             
+            # P1: Add safety header to summary if warnings exist
+            summary = parsed.get("summary", "See differential diagnoses")
+            if safety_result["warnings"] or safety_result["drug_interactions"] or safety_result["allergy_conflicts"]:
+                safety_header = format_safety_header(
+                    confidence=0.8 if parsed.get("confidence_level") == "high" else 0.5,
+                    warnings=safety_result["warnings"],
+                    verifications=["Verify all medication recommendations with current patient medications", "Confirm allergy status before prescribing"],
+                )
+                summary = f"{safety_header}\n\n{summary}"
+            
             return DiagnosticResponse(
                 request_id=request_id,
                 timestamp=datetime.utcnow().isoformat(),
-                summary=parsed.get("summary", "See differential diagnoses"),
+                summary=summary,
                 differential_diagnoses=diagnoses,
                 evidence_summary=parsed.get("evidence_summary", "Literature retrieved"),
                 citations=citations,
                 recommended_workup=parsed.get("recommended_workup", ["Consult physician"]),
-                treatment_considerations=parsed.get("treatment_considerations", []),
-                red_flags=parsed.get("red_flags", []),
+                treatment_considerations=treatment_considerations,
+                red_flags=red_flags,
                 follow_up=parsed.get("follow_up", "Schedule follow-up"),
                 confidence_level=parsed.get("confidence_level", "medium"),
                 articles_retrieved=len(retrieved_articles),

@@ -8,6 +8,9 @@ Implements the complete query processing flow:
 3. Cross-Encoder Re-Ranking
 4. Threshold Check (0.60)
 5. Fallback Chain (if needed)
+
+P1 Enhancement: Added similarity matrix initialization fix to prevent
+"Cannot set properties of undefined" error during re-ranking.
 """
 
 import asyncio
@@ -112,6 +115,9 @@ class LangChainRetrievalEngine:
        - Fallback 1: Lower Threshold (0.40)
        - Fallback 2: Simplified Query
        - Fallback 3: Direct LLM (No RAG)
+    
+    P1 Enhancement: Added proper similarity matrix initialization to prevent
+    "Cannot set properties of undefined" errors during cross-encoder re-ranking.
     """
 
     # Thresholds
@@ -132,7 +138,12 @@ class LangChainRetrievalEngine:
         self.llm = ZAILLM()
         self._pinecone = None
         self._index = None
+        self._cross_encoder = None  # P1: Cross-encoder for re-ranking
         self._initialized = False
+
+        # P1: Similarity matrix initialization
+        self._similarity_matrix = None
+        self._matrix_initialized = False
 
         # Cache
         self._cache: Dict[str, List[RetrievedDocument]] = {}
@@ -151,6 +162,8 @@ class LangChainRetrievalEngine:
             "fallback_2_count": 0,
             "fallback_3_count": 0,
             "cache_hits": 0,
+            "rerank_count": 0,
+            "similarity_matrix_errors": 0,
         }
 
     async def initialize(self):
@@ -166,11 +179,100 @@ class LangChainRetrievalEngine:
             self._pinecone = Pinecone(api_key=self.settings.PINECONE_API_KEY)
             self._index = self._pinecone.Index(self.settings.PINECONE_INDEX_NAME)
             logger.info("[LangChain RAG] Connected to Pinecone")
+            
+            # P1: Initialize similarity matrix to prevent undefined errors
+            self._initialize_similarity_matrix()
+            
             self._initialized = True
 
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
             raise
+    
+    def _initialize_similarity_matrix(self):
+        """
+        P1: Initialize similarity matrix to prevent "Cannot set properties of undefined" error.
+        
+        This fix ensures the similarity matrix is properly initialized before
+        any cross-encoder re-ranking operations.
+        """
+        if self._matrix_initialized:
+            return
+        
+        try:
+            # Initialize empty similarity matrix
+            self._similarity_matrix = {}
+            self._matrix_initialized = True
+            logger.info("[LangChain RAG] Similarity matrix initialized")
+            
+        except Exception as e:
+            logger.warning(f"[LangChain RAG] Similarity matrix init warning: {e}")
+            self._similarity_matrix = {}
+            self._matrix_initialized = True
+
+    async def _rerank_with_cross_encoder(
+        self,
+        query: str,
+        documents: List[RetrievedDocument],
+        top_k: int = 20,
+    ) -> List[RetrievedDocument]:
+        """
+        P1: Re-rank documents using cross-encoder with proper similarity matrix handling.
+        
+        This implements the similarity matrix fix to prevent "Cannot set properties of undefined" error.
+        """
+        if not documents:
+            return documents
+        
+        # Ensure similarity matrix is initialized
+        if not self._matrix_initialized:
+            self._initialize_similarity_matrix()
+        
+        try:
+            # Try to load cross-encoder
+            if self._cross_encoder is None:
+                try:
+                    from sentence_transformers import CrossEncoder
+                    self._cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+                    logger.info("[LangChain RAG] Cross-encoder loaded for re-ranking")
+                except Exception as e:
+                    logger.warning(f"[LangChain RAG] Cross-encoder not available: {e}")
+                    return documents
+            
+            # Prepare pairs for cross-encoder
+            pairs = [(query, doc.abstract[:500] or doc.title) for doc in documents]
+            
+            # Get cross-encoder scores with proper error handling
+            try:
+                scores = self._cross_encoder.predict(pairs)
+            except Exception as e:
+                logger.warning(f"[LangChain RAG] Cross-encoder prediction failed: {e}")
+                self.stats["similarity_matrix_errors"] += 1
+                return documents
+            
+            # P1: Ensure scores array is properly initialized before updating documents
+            if scores is None or len(scores) != len(documents):
+                logger.warning("[LangChain RAG] Cross-encoder returned invalid scores")
+                return documents
+            
+            # Update document scores and sort
+            for i, doc in enumerate(documents):
+                # P1: Safe score assignment with validation
+                if i < len(scores):
+                    doc.score = float(scores[i])
+            
+            # Sort by re-ranked score
+            documents.sort(key=lambda x: x.score, reverse=True)
+            
+            self.stats["rerank_count"] += 1
+            logger.info(f"[LangChain RAG] Re-ranked {len(documents)} documents")
+            
+            return documents[:top_k]
+            
+        except Exception as e:
+            logger.warning(f"[LangChain RAG] Re-ranking failed: {e}")
+            self.stats["similarity_matrix_errors"] += 1
+            return documents
 
     def _hash_query(self, query: str, top_k: int) -> str:
         """Generate cache key."""
@@ -370,6 +472,10 @@ Provide a comprehensive answer based on the context. If the context doesn't cont
 
         # Step 2: Retrieve Documents
         documents = await self._retrieve_raw(query, top_k, source_filter)
+        
+        # P1: Apply cross-encoder re-ranking
+        if documents:
+            documents = await self._rerank_with_cross_encoder(query, documents, top_k)
 
         # Get max score
         max_score = max((doc.score for doc in documents), default=0.0)

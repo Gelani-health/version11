@@ -435,6 +435,98 @@ async def get_specialties():
     }
 
 
+# ===== P1: Safety Validation Endpoints =====
+
+@app.post("/api/v1/safety/check", tags=["Safety"])
+async def safety_check(
+    symptoms: str,
+    current_medications: Optional[List[str]] = None,
+    allergies: Optional[List[str]] = None,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Run safety validation checks on patient symptoms and medications.
+    
+    Returns emergency triggers, drug interactions, and allergy conflicts.
+    """
+    from app.prompts.safety_prompts import (
+        check_emergency_triggers,
+        validate_drug_interaction_safety,
+        validate_allergy_safety,
+    )
+    
+    result = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "is_safe": True,
+        "warnings": [],
+        "emergency": None,
+        "drug_interactions": [],
+        "allergy_conflicts": [],
+    }
+    
+    # Check emergency triggers
+    is_emergency, emergency_details = check_emergency_triggers(
+        symptoms, {"medications": current_medications, "allergies": allergies}
+    )
+    if is_emergency:
+        result["is_safe"] = False
+        result["emergency"] = emergency_details
+    
+    # Check drug interactions
+    if current_medications and len(current_medications) > 1:
+        for i, med1 in enumerate(current_medications):
+            for med2 in current_medications[i+1:]:
+                interactions = validate_drug_interaction_safety(med1, [med2])
+                if interactions:
+                    result["drug_interactions"].extend([i.to_dict() for i in interactions])
+    
+    # Check allergy conflicts
+    if allergies and current_medications:
+        for med in current_medications:
+            is_safe, warning, alternatives = validate_allergy_safety(med, allergies)
+            if not is_safe:
+                result["allergy_conflicts"].append({
+                    "medication": med,
+                    "warning": warning,
+                    "alternatives": alternatives,
+                })
+    
+    if result["drug_interactions"] or result["allergy_conflicts"]:
+        result["is_safe"] = False
+    
+    return result
+
+
+@app.get("/api/v1/safety/emergency-triggers", tags=["Safety"])
+async def get_emergency_triggers():
+    """P1: Get list of emergency escalation triggers."""
+    from app.prompts.safety_prompts import ESCALATION_TRIGGERS
+    return {
+        "triggers": ESCALATION_TRIGGERS,
+        "total_categories": len(ESCALATION_TRIGGERS),
+    }
+
+
+@app.get("/api/v1/safety/high-risk-medications", tags=["Safety"])
+async def get_high_risk_medications():
+    """P1: Get list of high-risk medication classes and monitoring requirements."""
+    from app.prompts.safety_prompts import HIGH_RISK_MEDICATIONS
+    return {
+        "medications": HIGH_RISK_MEDICATIONS,
+        "total_classes": len(HIGH_RISK_MEDICATIONS),
+    }
+
+
+@app.get("/api/v1/safety/allergy-cross-reactivity", tags=["Safety"])
+async def get_allergy_cross_reactivity():
+    """P1: Get allergy cross-reactivity database."""
+    from app.prompts.safety_prompts import ALLERGY_CROSS_REACTIVITY
+    return {
+        "cross_reactivity": ALLERGY_CROSS_REACTIVITY,
+        "total_allergen_classes": len(ALLERGY_CROSS_REACTIVITY),
+    }
+
+
 # ===== Stats Endpoints =====
 
 @app.get("/api/v1/stats/retrieval", tags=["Monitoring"])

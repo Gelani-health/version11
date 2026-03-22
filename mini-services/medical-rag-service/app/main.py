@@ -4,6 +4,13 @@ Medical Diagnostic RAG Service - FastAPI Application
 
 Main entry point for the medical RAG service.
 Integrates PubMed/PMC, Pinecone, and GLM-4.7-Flash.
+
+P2 Enhancements:
+- Redis caching layer
+- Query expansion with MeSH terminology
+- Prometheus metrics export
+- Deep health probes with circuit breaker
+- Risk assessment endpoints
 """
 
 import asyncio
@@ -100,10 +107,14 @@ class HealthResponse(BaseModel):
 # ===== Application State =====
 
 class AppState:
-    """Application state container."""
+    ""Application state container."""
     retrieval_engine = None
     diagnostic_engine = None
     scheduler = None
+    cache_manager = None  # P2: Cache manager
+    query_expander = None  # P2: Query expander
+    health_probe = None  # P2: Health probe
+    risk_service = None  # P2: Risk assessment
     start_time: datetime = datetime.utcnow()
 
 
@@ -543,6 +554,204 @@ async def get_diagnostic_stats():
     if state.diagnostic_engine:
         return state.diagnostic_engine.get_stats()
     return {"status": "not_initialized"}
+
+
+# ===== P2: Deep Health Check Endpoints =====
+
+@app.get("/health/deep", tags=["System"])
+async def deep_health_check():
+    """
+    P2: Comprehensive health check with dependency status.
+    
+    Returns detailed health status for:
+    - Database connectivity
+    - Pinecone index
+    - LLM API
+    - Embedding model
+    - System resources
+    - Circuit breaker status
+    """
+    from app.monitoring.health_probes import get_health_probe
+    
+    probe = get_health_probe()
+    health = await probe.check_all()
+    return health.to_dict()
+
+
+@app.get("/health/ready", tags=["System"])
+async def readiness_probe():
+    """P2: Kubernetes-style readiness probe."""
+    from app.monitoring.health_probes import get_health_probe
+    
+    probe = get_health_probe()
+    is_ready = await probe.check_ready()
+    
+    if is_ready:
+        return {"status": "ready"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready"}
+    )
+
+
+@app.get("/health/live", tags=["System"])
+async def liveness_probe():
+    """P2: Kubernetes-style liveness probe."""
+    return {"status": "alive"}
+
+
+@app.get("/health/circuit-breakers", tags=["System"])
+async def get_circuit_breaker_status():
+    """P2: Get all circuit breaker statuses."""
+    from app.monitoring.health_probes import get_health_probe
+    
+    probe = get_health_probe()
+    return probe.get_circuit_breaker_status()
+
+
+# ===== P2: Prometheus Metrics Endpoint =====
+
+@app.get("/metrics", tags=["Monitoring"])
+async def prometheus_metrics():
+    """
+    P2: Export metrics in Prometheus format.
+    
+    Scraped by Prometheus for monitoring.
+    """
+    from app.monitoring.prometheus_export import export_prometheus_metrics
+    from fastapi.responses import PlainTextResponse
+    
+    metrics = export_prometheus_metrics()
+    return PlainTextResponse(content=metrics, media_type="text/plain")
+
+
+# ===== P2: Query Expansion Endpoint =====
+
+@app.post("/api/v1/query/expand", tags=["RAG"])
+async def expand_medical_query_endpoint(
+    query: str,
+    expand_mesh: bool = True,
+    expand_acronyms: bool = True,
+    expand_synonyms: bool = True,
+):
+    """
+    P2: Expand a medical query with MeSH terms, synonyms, and acronym resolution.
+    
+    Returns expanded query with related terminology for improved retrieval.
+    """
+    from app.retrieval.query_expander import get_query_expander
+    
+    expander = get_query_expander()
+    result = expander.expand(
+        query,
+        expand_mesh=expand_mesh,
+        expand_acronyms=expand_acronyms,
+        expand_synonyms=expand_synonyms,
+    )
+    return result.to_dict()
+
+
+@app.get("/api/v1/query/mesh-suggestions", tags=["RAG"])
+async def suggest_mesh_terms(query: str, limit: int = 5):
+    """P2: Get MeSH term suggestions for a query."""
+    from app.retrieval.query_expander import get_query_expander
+    
+    expander = get_query_expander()
+    suggestions = expander.suggest_mesh_terms(query, limit=limit)
+    return {
+        "query": query,
+        "suggestions": suggestions,
+    }
+
+
+# ===== P2: Risk Assessment Endpoints =====
+
+@app.post("/api/v1/risk-score/{score_name}", tags=["Risk Assessment"])
+async def calculate_risk_score(
+    score_name: str,
+    criteria: Dict[str, Any],
+):
+    """
+    P2: Calculate a specific clinical risk score.
+    
+    Supported scores:
+    - chads2vasc: Stroke risk in atrial fibrillation
+    - hasbled: Bleeding risk with anticoagulation
+    - wells_dvt: DVT probability
+    - qsofa: Sepsis risk
+    - curb65: Pneumonia severity
+    """
+    from app.api.risk_assessment import get_risk_service
+    
+    service = get_risk_service()
+    result = await service.calculate_score(score_name, **criteria)
+    return result
+
+
+@app.post("/api/v1/risk-assessment", tags=["Risk Assessment"])
+async def comprehensive_risk_assessment(
+    patient_data: Dict[str, Any],
+):
+    """
+    P2: Calculate all applicable risk scores for a patient.
+    
+    Automatically determines which risk scores are relevant based on patient data.
+    """
+    from app.api.risk_assessment import get_risk_service
+    
+    service = get_risk_service()
+    result = await service.calculate_all_applicable(patient_data)
+    return result
+
+
+@app.get("/api/v1/risk-scores", tags=["Risk Assessment"])
+async def list_available_risk_scores():
+    """P2: List all available risk scoring systems."""
+    from app.api.risk_assessment import get_risk_service
+    
+    service = get_risk_service()
+    return {
+        "risk_scores": service.get_available_scores(),
+    }
+
+
+# ===== P2: Cache Management Endpoints =====
+
+@app.get("/api/v1/cache/stats", tags=["Cache"])
+async def get_cache_stats():
+    """P2: Get cache statistics."""
+    from app.cache.redis_cache import get_cache_manager
+    
+    cache = await get_cache_manager()
+    return await cache.get_stats()
+
+
+@app.delete("/api/v1/cache/clear", tags=["Cache"])
+async def clear_cache(
+    authenticated: bool = Depends(verify_api_key),
+):
+    """P2: Clear all cached data."""
+    from app.cache.redis_cache import get_cache_manager
+    
+    cache = await get_cache_manager()
+    success = await cache.clear_all()
+    return {
+        "status": "success" if success else "error",
+        "message": "Cache cleared" if success else "Failed to clear cache",
+    }
+
+
+@app.get("/api/v1/cache/rate-limit/{user_id}", tags=["Cache"])
+async def check_rate_limit(
+    user_id: str,
+    endpoint: str = "default",
+):
+    """P2: Check rate limit status for a user."""
+    from app.cache.redis_cache import get_cache_manager
+    
+    cache = await get_cache_manager()
+    result = await cache.check_rate_limit(user_id, endpoint)
+    return result
 
 
 # ===== Error Handlers =====

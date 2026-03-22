@@ -269,47 +269,23 @@ class GLMFlashClient:
         )
     
     def _build_medical_system_prompt(self, specialty: Optional[str] = None) -> str:
-        """Build system prompt for medical reasoning."""
-        base_prompt = """You are an expert medical diagnostic AI assistant powered by GLM-4.7-Flash with access to PubMed/PMC medical literature.
-
-Your role is to:
-1. Analyze clinical queries using evidence-based medical literature
-2. Provide differential diagnoses with likelihood probabilities
-3. Suggest diagnostic workups and treatment options
-4. Cite relevant medical literature (PMID references)
-5. Highlight potential drug interactions and contraindications
-6. Consider patient-specific factors when provided
-
-GUIDELINES:
-- Always cite your sources using PMID references
-- Provide confidence levels for recommendations
-- Consider HIPAA compliance - do not store patient data
-- Recommend clinical verification for all suggestions
-- Use ICD-10 codes when applicable
-- Include MeSH terms for terminology
-
-RESPONSE FORMAT:
-## Summary
-[Brief answer to the query]
-
-## Evidence-Based Analysis
-[Detailed analysis with citations]
-
-## Differential Diagnosis
-[Ranked list with probabilities]
-
-## Recommendations
-[Diagnostic workup, treatment options]
-
-## Citations
-[PMID references]
-
-## Clinical Verification Required
-[What needs physician verification]
-"""
+        """Build system prompt for medical reasoning using optimal Gelani prompts."""
+        from app.prompts.system_prompts import MEDICAL_DIAGNOSTIC_SYSTEM_PROMPT
+        
+        base_prompt = MEDICAL_DIAGNOSTIC_SYSTEM_PROMPT
         
         if specialty:
-            base_prompt += f"\n\nFocus your expertise on: {specialty.upper()}"
+            # Add specialty-specific focus with relevant MeSH terms
+            specialty_focus = f"""
+
+## SPECIALTY FOCUS: {specialty.upper()}
+
+Apply specialized clinical reasoning for {specialty}. Consider specialty-specific:
+- Differential diagnoses common in {specialty}
+- Specialty-specific diagnostic criteria
+- Relevant clinical guidelines
+- Specialty referral criteria"""
+            base_prompt += specialty_focus
         
         return base_prompt
     

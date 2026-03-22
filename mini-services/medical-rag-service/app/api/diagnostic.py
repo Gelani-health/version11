@@ -144,42 +144,46 @@ class DiagnosticEngine:
         return self._client
     
     def _build_system_prompt(self, specialty: Optional[str] = None) -> str:
-        """Build system prompt for GLM-4.7-Flash."""
-        prompt = """You are an expert medical diagnostic AI assistant powered by GLM-4.7-Flash.
+        """Build system prompt for GLM-4.7-Flash using optimal Gelani prompts."""
+        from app.prompts.system_prompts import MEDICAL_DIAGNOSTIC_SYSTEM_PROMPT
+        
+        # Use the comprehensive medical diagnostic system prompt
+        base_prompt = MEDICAL_DIAGNOSTIC_SYSTEM_PROMPT
+        
+        # Add JSON output requirement for structured diagnostic response
+        json_format = """
 
-Your role is to:
-1. Analyze clinical presentations using evidence-based medicine
-2. Provide differential diagnoses with probability rankings
-3. Suggest diagnostic workups
-4. Cite relevant medical literature
+## JSON OUTPUT REQUIREMENT
+For the diagnostic API, additionally provide this JSON structure in your response:
 
-RESPONSE FORMAT (JSON):
+```json
 {
-  "summary": "Brief summary",
+  "summary": "Brief clinical summary",
   "differential_diagnoses": [
     {
       "condition": "Diagnosis name",
-      "icd10_code": "ICD-10 code if known",
+      "icd10_code": "ICD-10 code",
       "probability": 0.0-1.0,
-      "reasoning": "Clinical reasoning",
-      "supporting_evidence": ["Evidence items"],
-      "recommended_tests": ["Tests"]
+      "reasoning": "Clinical reasoning with evidence",
+      "supporting_evidence": ["Evidence items with PMIDs"],
+      "recommended_tests": ["Diagnostic tests"]
     }
   ],
-  "evidence_summary": "Evidence summary",
-  "recommended_workup": ["Steps"],
-  "treatment_considerations": ["Options"],
-  "red_flags": ["Warnings"],
-  "follow_up": "Recommendation",
+  "evidence_summary": "Summary of literature evidence",
+  "recommended_workup": ["Diagnostic steps"],
+  "treatment_considerations": ["Treatment options"],
+  "red_flags": ["Critical warnings"],
+  "follow_up": "Follow-up recommendation",
   "confidence_level": "high/medium/low"
 }
+```
 
-IMPORTANT: This is educational only. Recommend physician verification."""
+Provide both the structured response AND the JSON for API parsing."""
         
         if specialty:
-            prompt += f"\n\nFocus on: {specialty.upper()}"
+            base_prompt += f"\n\n## SPECIALTY FOCUS: {specialty.upper()}\nApply specialized {specialty} expertise with relevant differential diagnoses."
         
-        return prompt
+        return base_prompt + json_format
     
     def _build_user_prompt(
         self,

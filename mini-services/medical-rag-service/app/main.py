@@ -3548,6 +3548,352 @@ async def test_pinecone_query(query: str = "diabetes mellitus treatment"):
         }
 
 
+# =============================================================================
+# P1: CLINICAL CALCULATORS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/calculators/wells-pe", tags=["P1 - Calculators"])
+async def calculate_wells_pe_score(
+    dvt_signs: bool = False,
+    pe_most_likely: bool = False,
+    heart_rate: Optional[int] = None,
+    immobilization_surgery: bool = False,
+    previous_dvt_pe: bool = False,
+    hemoptysis: bool = False,
+    malignancy: bool = False,
+    age: Optional[int] = None,
+):
+    """
+    P1: Calculate Wells PE Score for pulmonary embolism risk assessment.
+
+    Returns PE likelihood, probability, and clinical recommendations.
+    """
+    from app.calculators.wells_pe_score import get_wells_pe_calculator
+
+    calculator = get_wells_pe_calculator()
+    result = calculator.calculate(
+        dvt_signs=dvt_signs,
+        pe_most_likely=pe_most_likely,
+        heart_rate=heart_rate,
+        immobilization_surgery=immobilization_surgery,
+        previous_dvt_pe=previous_dvt_pe,
+        hemoptysis=hemoptysis,
+        malignancy=malignancy,
+        age=age,
+    )
+    return result.to_dict()
+
+
+@app.post("/api/v1/calculators/apache-ii", tags=["P1 - Calculators"])
+async def calculate_apache_ii_score(
+    temperature: Optional[float] = None,
+    mean_arterial_pressure: Optional[float] = None,
+    heart_rate: Optional[float] = None,
+    respiratory_rate: Optional[float] = None,
+    fio2: Optional[float] = None,
+    pao2: Optional[float] = None,
+    ph: Optional[float] = None,
+    sodium: Optional[float] = None,
+    potassium: Optional[float] = None,
+    creatinine: Optional[float] = None,
+    hematocrit: Optional[float] = None,
+    wbc: Optional[float] = None,
+    gcs: Optional[int] = None,
+    age: Optional[int] = None,
+    chronic_health: str = "none",
+    acute_renal_failure: bool = False,
+):
+    """
+    P1: Calculate APACHE II Score for ICU mortality prediction.
+
+    Returns predicted mortality and component breakdown.
+    """
+    from app.calculators.apache_ii import get_apache_ii_calculator
+
+    calculator = get_apache_ii_calculator()
+    result = calculator.calculate(
+        temperature=temperature,
+        mean_arterial_pressure=mean_arterial_pressure,
+        heart_rate=heart_rate,
+        respiratory_rate=respiratory_rate,
+        fio2=fio2,
+        pao2=pao2,
+        ph=ph,
+        sodium=sodium,
+        potassium=potassium,
+        creatinine=creatinine,
+        hematocrit=hematocrit,
+        wbc=wbc,
+        gcs=gcs,
+        age=age,
+        chronic_health=chronic_health,
+        acute_renal_failure=acute_renal_failure,
+    )
+    return result.to_dict()
+
+
+@app.post("/api/v1/calculators/meld-na", tags=["P1 - Calculators"])
+async def calculate_meld_na_score(
+    bilirubin: float,
+    inr: float,
+    creatinine: float,
+    sodium: float,
+    is_dialysis: bool = False,
+    is_transplant_candidate: bool = True,
+):
+    """
+    P1: Calculate MELD-Na Score for liver disease severity.
+
+    Used for liver transplant prioritization (UNOS).
+    """
+    from app.calculators.meld_na import get_meld_na_calculator
+
+    calculator = get_meld_na_calculator()
+    result = calculator.calculate(
+        bilirubin=bilirubin,
+        inr=inr,
+        creatinine=creatinine,
+        sodium=sodium,
+        is_dialysis=is_dialysis,
+        is_transplant_candidate=is_transplant_candidate,
+    )
+    return result.to_dict()
+
+
+@app.post("/api/v1/calculators/nnt", tags=["P1 - Calculators"])
+async def calculate_nnt(
+    control_event_rate: float,
+    experimental_event_rate: float,
+    control_n: Optional[int] = None,
+    experimental_n: Optional[int] = None,
+    time_horizon: str = "unspecified",
+    outcome: str = "",
+    population_risk: str = "average",
+):
+    """
+    P1: Calculate Number Needed to Treat (NNT).
+
+    Returns NNT, absolute risk reduction, and clinical interpretation.
+    """
+    from app.calculators.nnt_calculator import get_nnt_calculator
+
+    calculator = get_nnt_calculator()
+    result = calculator.calculate_from_rates(
+        control_event_rate=control_event_rate,
+        experimental_event_rate=experimental_event_rate,
+        control_n=control_n,
+        experimental_n=experimental_n,
+        time_horizon=time_horizon,
+        outcome=outcome,
+        population_risk=population_risk,
+    )
+    return result.to_dict()
+
+
+@app.get("/api/v1/calculators/nnt/common", tags=["P1 - Calculators"])
+async def get_common_nnt_values():
+    """P1: Get pre-calculated NNT values for common treatments."""
+    from app.calculators.nnt_calculator import get_nnt_calculator
+
+    calculator = get_nnt_calculator()
+    return {"treatments": calculator.COMMON_NNTs}
+
+
+@app.post("/api/v1/adherence/assess", tags=["P1 - Adherence"])
+async def assess_medication_adherence(
+    medications: List[str],
+    age: Optional[int] = None,
+    has_depression: bool = False,
+    has_cognitive_impairment: bool = False,
+    health_literacy_low: bool = False,
+    has_cost_concerns: bool = False,
+    lives_alone: bool = False,
+    previous_non_adherence: bool = False,
+    side_effects_history: bool = False,
+):
+    """
+    P1: Assess medication adherence risk and barriers.
+
+    Returns adherence score, risk factors, and intervention recommendations.
+    """
+    from app.calculators.medication_adherence import get_adherence_scorer
+
+    scorer = get_adherence_scorer()
+    result = scorer.assess(
+        medications=medications,
+        age=age,
+        has_depression=has_depression,
+        has_cognitive_impairment=has_cognitive_impairment,
+        health_literacy_low=health_literacy_low,
+        has_cost_concerns=has_cost_concerns,
+        lives_alone=lives_alone,
+        previous_non_adherence=previous_non_adherence,
+        side_effects_history=side_effects_history,
+    )
+    return result.to_dict()
+
+
+# =============================================================================
+# P1: ACS PATHWAY ENDPOINT
+# =============================================================================
+
+@app.post("/api/v1/pathways/acs", tags=["P1 - Pathways"])
+async def assess_acs_pathway(
+    ecg_findings: List[str] = None,
+    troponin_result: str = "normal",
+    age: int = 50,
+    heart_rate: int = 80,
+    systolic_bp: int = 120,
+    risk_factors: List[str] = None,
+    prior_cardiac_history: bool = False,
+    pci_capable_center: bool = True,
+):
+    """
+    P1: Acute Coronary Syndrome clinical pathway assessment.
+
+    ECG findings: st_elevation, st_depression, t_wave_inversion, lbbb_new, etc.
+    Troponin: normal, elevated, rising, highly_elevated
+    """
+    from app.pathways.acs_pathway import get_acs_pathway
+
+    pathway = get_acs_pathway()
+    result = pathway.assess(
+        ecg_findings=ecg_findings or [],
+        troponin_result=troponin_result,
+        age=age,
+        heart_rate=heart_rate,
+        systolic_bp=systolic_bp,
+        risk_factors=risk_factors,
+        prior_cardiac_history=prior_cardiac_history,
+        pci_capable_center=pci_capable_center,
+    )
+    return result.to_dict()
+
+
+# =============================================================================
+# P1: BAYESIAN DIAGNOSTIC ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/diagnostic/bayesian/initialize", tags=["P1 - Diagnostic"])
+async def initialize_bayesian_analysis(
+    presentation: str,
+    custom_probabilities: Optional[Dict[str, float]] = None,
+):
+    """
+    P1: Initialize Bayesian diagnostic analysis for a clinical presentation.
+
+    Presentations: chest_pain, dyspnea, syncope, abdominal_pain_acute, fever_unknown_source
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+
+    engine = get_bayesian_engine()
+    engine.initialize_from_presentation(presentation, custom_probabilities)
+    return {"status": "initialized", "presentation": presentation}
+
+
+@app.post("/api/v1/diagnostic/bayesian/apply-test", tags=["P1 - Diagnostic"])
+async def apply_diagnostic_test(
+    test_name: str,
+    result: str,  # positive, negative, inconclusive
+    lr_positive: Optional[float] = None,
+    lr_negative: Optional[float] = None,
+):
+    """
+    P1: Apply a diagnostic test result to Bayesian analysis.
+
+    Updates all hypothesis probabilities based on likelihood ratios.
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine, TestResult
+
+    engine = get_bayesian_engine()
+    test_result = TestResult(result.lower())
+    engine.apply_test(
+        test_name=test_name,
+        result=test_result,
+        lr_positive=lr_positive,
+        lr_negative=lr_negative,
+    )
+    return {"status": "applied", "test": test_name, "result": result}
+
+
+@app.get("/api/v1/diagnostic/bayesian/analyze", tags=["P1 - Diagnostic"])
+async def analyze_bayesian_diagnosis():
+    """
+    P1: Get Bayesian diagnostic analysis results.
+
+    Returns ranked differential diagnosis with probabilities.
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+
+    engine = get_bayesian_engine()
+    result = engine.analyze()
+    return result.to_dict()
+
+
+# =============================================================================
+# P1: PERFORMANCE MONITORING ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/monitoring/performance", tags=["P1 - Monitoring"])
+async def get_performance_stats():
+    """
+    P1: Get query performance statistics with latency analysis.
+
+    Returns p50, p95, p99 latencies and alert status.
+    """
+    from app.monitoring.performance_monitor import get_performance_monitor
+
+    monitor = get_performance_monitor()
+    return monitor.get_all_stats()
+
+
+@app.get("/api/v1/monitoring/performance/{endpoint}", tags=["P1 - Monitoring"])
+async def get_endpoint_performance(endpoint: str):
+    """P1: Get performance statistics for a specific endpoint."""
+    from app.monitoring.performance_monitor import get_performance_monitor
+
+    monitor = get_performance_monitor()
+    return monitor.get_endpoint_stats(f"/api/v1/{endpoint}")
+
+
+@app.get("/api/v1/monitoring/alerts", tags=["P1 - Monitoring"])
+async def get_performance_alerts(
+    severity: Optional[str] = None,
+    limit: int = 100,
+):
+    """
+    P1: Get recent performance alerts.
+
+    Severity: info, warning, critical, emergency
+    """
+    from app.monitoring.performance_monitor import get_performance_monitor, AlertSeverity
+
+    monitor = get_performance_monitor()
+    sev = AlertSeverity(severity.lower()) if severity else None
+    return {"alerts": monitor.get_alerts(severity=sev, limit=limit)}
+
+
+@app.get("/api/v1/monitoring/alerts/active", tags=["P1 - Monitoring"])
+async def get_active_alerts():
+    """P1: Get all active (unacknowledged) performance alerts."""
+    from app.monitoring.performance_monitor import get_performance_monitor
+
+    monitor = get_performance_monitor()
+    return {"active_alerts": monitor.get_active_alerts()}
+
+
+@app.post("/api/v1/monitoring/alerts/{alert_id}/acknowledge", tags=["P1 - Monitoring"])
+async def acknowledge_performance_alert(alert_id: str, acknowledged_by: str):
+    """P1: Acknowledge a performance alert."""
+    from app.monitoring.performance_monitor import get_performance_monitor
+
+    monitor = get_performance_monitor()
+    alert = monitor.acknowledge_alert(alert_id, acknowledged_by)
+    if alert:
+        return {"status": "acknowledged", "alert": alert.to_dict()}
+    return {"status": "not_found", "alert_id": alert_id}
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

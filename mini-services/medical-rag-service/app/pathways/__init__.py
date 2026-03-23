@@ -3,11 +3,15 @@ Clinical Pathways Module
 ========================
 
 Evidence-based clinical pathways for common emergency conditions.
+
+P1 Additions:
+- ACS Pathway (Acute Coronary Syndrome)
 """
 
 from app.pathways.chest_pain_pathway import ChestPainPathway, get_chest_pain_pathway
 from app.pathways.sepsis_protocol import SepsisProtocol, get_sepsis_protocol
 from app.pathways.stroke_pathway import StrokePathway, get_stroke_pathway
+from app.pathways.acs_pathway import ACSPathway, get_acs_pathway
 
 __all__ = [
     "ChestPainPathway",
@@ -16,4 +20,6 @@ __all__ = [
     "get_sepsis_protocol",
     "StrokePathway",
     "get_stroke_pathway",
+    "ACSPathway",
+    "get_acs_pathway",
 ]

@@ -3114,6 +3114,440 @@ async def get_supported_multimodal_types():
     }
 
 
+# =============================================================================
+# P0: CLINICAL CALCULATORS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/calculators/sofa", tags=["P0 - Calculators"])
+async def calculate_sofa_score(
+    pao2: Optional[float] = None,
+    fio2: Optional[float] = None,
+    platelets: Optional[float] = None,
+    bilirubin: Optional[float] = None,
+    map: Optional[float] = None,
+    vasopressors: Optional[List[str]] = None,
+    gcs: Optional[int] = None,
+    creatinine: Optional[float] = None,
+    urine_output_24h: Optional[float] = None,
+    has_infection: bool = False,
+):
+    """
+    P0: Calculate SOFA Score (Sequential Organ Failure Assessment).
+    
+    Used for sepsis diagnosis and ICU mortality prediction.
+    
+    Components:
+    - Respiration (PaO2/FiO2)
+    - Coagulation (Platelets)
+    - Liver (Bilirubin)
+    - Cardiovascular (MAP + Vasopressors)
+    - CNS (GCS)
+    - Renal (Creatinine or Urine Output)
+    
+    Score ≥2 with infection = SEPSIS
+    """
+    from app.calculators.sofa_score import get_sofa_calculator
+    
+    calculator = get_sofa_calculator()
+    result = calculator.calculate(
+        pao2=pao2,
+        fio2=fio2,
+        platelets=platelets,
+        bilirubin=bilirubin,
+        map=map,
+        vasopressors=vasopressors,
+        gcs=gcs,
+        creatinine=creatinine,
+        urine_output_24h=urine_output_24h,
+        has_infection=has_infection,
+    )
+    
+    return result.to_dict()
+
+
+@app.post("/api/v1/calculators/heart", tags=["P0 - Calculators"])
+async def calculate_heart_score(
+    history: str,
+    ecg_findings: str,
+    age: int,
+    risk_factors: List[str],
+    troponin_level: Optional[float] = None,
+    troponin_upper_limit: float = 0.04,
+):
+    """
+    P0: Calculate HEART Score for chest pain risk stratification.
+    
+    Predicts 6-week risk of major adverse cardiac events (MACE).
+    
+    Components:
+    H - History (0-2 points)
+    E - ECG (0-2 points)
+    A - Age (0-2 points)
+    R - Risk factors (0-2 points)
+    T - Troponin (0-2 points)
+    
+    Risk Categories:
+    - 0-3: Low risk (0.9-1.7% MACE)
+    - 4-6: Moderate risk (12-27% MACE)
+    - 7-10: High risk (50-96% MACE)
+    """
+    from app.calculators.heart_score import get_heart_calculator
+    
+    calculator = get_heart_calculator()
+    result = calculator.calculate(
+        history=history,
+        ecg_findings=ecg_findings,
+        age=age,
+        risk_factors=risk_factors,
+        troponin_level=troponin_level,
+        troponin_upper_limit=troponin_upper_limit,
+    )
+    
+    return result.to_dict()
+
+
+# =============================================================================
+# P0: CLINICAL PATHWAYS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/pathways/chest-pain", tags=["P0 - Pathways"])
+async def assess_chest_pain_pathway(
+    patient_id: Optional[str] = None,
+    pain_characteristics: Optional[Dict[str, Any]] = None,
+    ecg_finding: str = "normal",
+    heart_score: int = 0,
+    troponin_0h: Optional[float] = None,
+    troponin_3h: Optional[float] = None,
+    vital_signs: Optional[Dict[str, float]] = None,
+):
+    """
+    P0: Chest Pain Clinical Pathway.
+    
+    Evidence-based pathway for chest pain evaluation:
+    1. Initial Assessment (ABC, vitals, ECG within 10 min)
+    2. Risk Stratification (HEART Score)
+    3. Troponin Testing
+    4. Imaging Decisions
+    5. Disposition
+    
+    Time Targets:
+    - Door-to-ECG: < 10 minutes
+    - Door-to-needle (tPA for STEMI): < 60 minutes
+    """
+    from app.pathways.chest_pain_pathway import get_chest_pain_pathway
+    
+    pathway = get_chest_pain_pathway()
+    result = pathway.assess(
+        patient_id=patient_id,
+        pain_characteristics=pain_characteristics,
+        ecg_finding=ecg_finding,
+        heart_score=heart_score,
+        troponin_0h=troponin_0h,
+        troponin_3h=troponin_3h,
+        vital_signs=vital_signs,
+    )
+    
+    return result.to_dict()
+
+
+@app.post("/api/v1/pathways/sepsis", tags=["P0 - Pathways"])
+async def assess_sepsis_protocol(
+    patient_id: Optional[str] = None,
+    has_suspected_infection: bool = False,
+    infection_source: str = "unknown",
+    qsofa_altered_mentation: bool = False,
+    qsofa_rr_high: bool = False,
+    qsofa_sbp_low: bool = False,
+    sofa_score: int = 0,
+    lactate: Optional[float] = None,
+    map: Optional[float] = None,
+    fluid_resuscitated: bool = False,
+):
+    """
+    P0: Sepsis Protocol (SEP-1 Bundle Compliance).
+    
+    Based on Surviving Sepsis Campaign Guidelines 2021.
+    
+    3-Hour Bundle:
+    1. Measure lactate
+    2. Blood cultures before antibiotics
+    3. Broad-spectrum antibiotics
+    4. 30 mL/kg crystalloid for hypotension/lactate ≥4
+    
+    6-Hour Bundle:
+    5. Vasopressors if refractory hypotension
+    6. Repeat lactate
+    7. Source control
+    """
+    from app.pathways.sepsis_protocol import get_sepsis_protocol
+    
+    protocol = get_sepsis_protocol()
+    result = protocol.assess(
+        patient_id=patient_id,
+        has_suspected_infection=has_suspected_infection,
+        infection_source=infection_source,
+        qsofa_altered_mentation=qsofa_altered_mentation,
+        qsofa_rr_high=qsofa_rr_high,
+        qsofa_sbp_low=qsofa_sbp_low,
+        sofa_score=sofa_score,
+        lactate=lactate,
+        map=map,
+        fluid_resuscitated=fluid_resuscitated,
+    )
+    
+    return result.to_dict()
+
+
+@app.get("/api/v1/pathways/sepsis/antibiotics/{source}", tags=["P0 - Pathways"])
+async def get_sepsis_antibiotic_recommendations(source: str):
+    """P0: Get empiric antibiotic recommendations by infection source."""
+    from app.pathways.sepsis_protocol import get_sepsis_protocol
+    
+    protocol = get_sepsis_protocol()
+    recommendations = protocol.get_antibiotic_recommendations(source)
+    
+    return {
+        "infection_source": source,
+        "recommendations": recommendations,
+    }
+
+
+@app.post("/api/v1/pathways/sepsis/fluid-dose", tags=["P0 - Pathways"])
+async def calculate_sepsis_fluid_dose(weight_kg: float):
+    """P0: Calculate fluid resuscitation dose for sepsis (30 mL/kg)."""
+    from app.pathways.sepsis_protocol import get_sepsis_protocol
+    
+    protocol = get_sepsis_protocol()
+    result = protocol.calculate_fluid_dose(weight_kg)
+    
+    return result
+
+
+@app.post("/api/v1/pathways/stroke", tags=["P0 - Pathways"])
+async def assess_stroke_pathway(
+    patient_id: Optional[str] = None,
+    last_known_well: Optional[str] = None,
+    nihss_scores: Optional[Dict[int, int]] = None,
+    ct_result: str = "",
+    cta_result: str = "",
+    large_vessel_occlusion: bool = False,
+    contraindications: Optional[Dict[str, bool]] = None,
+    blood_pressure: Optional[List[float]] = None,
+    glucose: Optional[float] = None,
+    inr: Optional[float] = None,
+    platelets: Optional[float] = None,
+    weight_kg: Optional[float] = None,
+    patient_age: Optional[int] = None,
+    patient_gender: Optional[str] = None,
+):
+    """
+    P0: Stroke Pathway with tPA Eligibility Assessment.
+    
+    Based on AHA/ASA Guidelines for Acute Ischemic Stroke.
+    
+    Time Targets:
+    - Door-to-CT: < 25 minutes
+    - Door-to-CT-read: < 45 minutes
+    - Door-to-needle (tPA): < 60 minutes
+    - Door-to-puncture (thrombectomy): < 90 minutes
+    
+    tPA Window:
+    - Standard: 0-4.5 hours from LKW
+    - Extended: Selected patients up to 9 hours (with imaging)
+    
+    Args:
+        last_known_well: ISO format datetime string
+        nihss_scores: Dict mapping NIHSS item number (1-15) to score
+        blood_pressure: [systolic, diastolic] in mmHg
+    """
+    from app.pathways.stroke_pathway import get_stroke_pathway
+    from datetime import datetime as dt
+    
+    pathway = get_stroke_pathway()
+    
+    # Parse last known well time
+    lkw = None
+    if last_known_well:
+        try:
+            lkw = dt.fromisoformat(last_known_well.replace('Z', '+00:00'))
+        except:
+            pass
+    
+    # Parse blood pressure
+    bp_tuple = None
+    if blood_pressure and len(blood_pressure) >= 2:
+        bp_tuple = (blood_pressure[0], blood_pressure[1])
+    
+    result = pathway.assess(
+        patient_id=patient_id,
+        last_known_well=lkw,
+        nihss_scores=nihss_scores,
+        ct_result=ct_result,
+        cta_result=cta_result,
+        large_vessel_occlusion=large_vessel_occlusion,
+        contraindications=contraindications,
+        blood_pressure=bp_tuple,
+        glucose=glucose,
+        inr=inr,
+        platelets=platelets,
+        weight_kg=weight_kg,
+        patient_age=patient_age,
+        patient_gender=patient_gender,
+    )
+    
+    return result.to_dict()
+
+
+# =============================================================================
+# P0: ECG ANALYSIS ENDPOINT
+# =============================================================================
+
+@app.post("/api/v1/ecg/analyze", tags=["P0 - ECG"])
+async def analyze_ecg(
+    heart_rate: int,
+    rhythm: str = "sinus",
+    pr_interval: Optional[float] = None,
+    qrs_duration: Optional[float] = None,
+    qt_interval: Optional[float] = None,
+    axis: Optional[str] = None,
+    st_measurements: Optional[Dict[str, float]] = None,
+    t_wave_findings: Optional[Dict[str, str]] = None,
+    q_waves: Optional[List[str]] = None,
+    patient_age: Optional[int] = None,
+    patient_gender: Optional[str] = None,
+    symptoms: Optional[str] = None,
+):
+    """
+    P0: ECG Waveform Analysis with STEMI Detection.
+    
+    Features:
+    - Automated rhythm detection
+    - Interval measurement analysis
+    - STEMI criteria evaluation
+    - Arrhythmia detection
+    - Clinical recommendations
+    
+    st_measurements: Dict mapping lead names to ST deviation in mm
+        Example: {"V1": 1.5, "V2": 2.0, "V3": 2.5, "II": -0.5}
+        Positive = elevation, Negative = depression
+    
+    t_wave_findings: Dict mapping lead names to T wave description
+        Example: {"V1": "inverted", "V2": "peaked", "II": "normal"}
+    
+    Returns interpretation with clinical significance and recommendations.
+    """
+    from app.ecg.ecg_analyzer import get_ecg_analyzer
+    
+    analyzer = get_ecg_analyzer()
+    result = analyzer.analyze(
+        heart_rate=heart_rate,
+        rhythm=rhythm,
+        pr_interval=pr_interval,
+        qrs_duration=qrs_duration,
+        qt_interval=qt_interval,
+        axis=axis,
+        st_measurements=st_measurements or {},
+        t_wave_findings=t_wave_findings or {},
+        q_waves=q_waves or [],
+        patient_age=patient_age,
+        patient_gender=patient_gender,
+        symptoms=symptoms,
+    )
+    
+    return result.to_dict()
+
+
+@app.get("/api/v1/ecg/stemi-territories", tags=["P0 - ECG"])
+async def get_stemi_territories():
+    """P0: Get STEMI territory definitions and criteria."""
+    from app.ecg.ecg_analyzer import ECGAnalyzer
+    
+    return {
+        "territories": ECGAnalyzer.STEMI_TERRITORIES,
+        "thresholds": ECGAnalyzer.STEMI_THRESHOLDS,
+        "notes": [
+            "V2-V3 thresholds vary by age and gender",
+            "Elevation must be in ≥2 contiguous leads",
+            "Reciprocal changes increase diagnostic confidence",
+        ],
+    }
+
+
+# =============================================================================
+# P0: PINECONE NAMESPACE VERIFICATION
+# =============================================================================
+
+@app.get("/api/v1/pinecone/namespace-status", tags=["P0 - Pinecone"])
+async def check_pinecone_namespace():
+    """
+    P0: Check Pinecone namespace status and vector counts.
+    
+    Verifies:
+    - Index connectivity
+    - Namespace vector count
+    - Dimension compatibility
+    """
+    from app.retrieval.pinecone_store import PineconeVectorStore
+    
+    try:
+        store = PineconeVectorStore()
+        store.connect()
+        stats = await store.get_stats()
+        
+        return {
+            "status": "connected",
+            "index_name": settings.PINECONE_INDEX_NAME,
+            "namespace": settings.PINECONE_NAMESPACE,
+            "dimension": settings.EMBEDDING_DIMENSION,
+            "stats": stats,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "index_name": settings.PINECONE_INDEX_NAME,
+            "namespace": settings.PINECONE_NAMESPACE,
+        }
+
+
+@app.get("/api/v1/pinecone/test-query", tags=["P0 - Pinecone"])
+async def test_pinecone_query(query: str = "diabetes mellitus treatment"):
+    """
+    P0: Test Pinecone retrieval with a sample query.
+    
+    Returns vector search results to verify:
+    - Namespace contains vectors
+    - Embeddings are working
+    - Results are returned
+    """
+    from app.retrieval.rag_engine import RAGRetrievalEngine
+    
+    try:
+        engine = RAGRetrievalEngine(top_k=5)
+        result = await engine.retrieve(query, top_k=5)
+        
+        return {
+            "status": "success",
+            "query": query,
+            "total_results": len(result.articles),
+            "results_preview": [
+                {
+                    "pmid": a.pmid,
+                    "title": a.title[:100],
+                    "score": round(a.score, 4),
+                }
+                for a in result.articles[:3]
+            ],
+            "latency_ms": round(result.retrieval_latency_ms, 2),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "query": query,
+        }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

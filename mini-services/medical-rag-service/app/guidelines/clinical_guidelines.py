@@ -1128,6 +1128,23 @@ class ClinicalGuidelineEngine:
         
         return results
     
+    def match_guidelines(
+        self,
+        query: str,
+        patient_context: Optional[Dict[str, Any]] = None,
+    ) -> List[GuidelineMatch]:
+        """
+        Alias for search_guidelines for P2 integration.
+        
+        Args:
+            query: Clinical query text
+            patient_context: Patient-specific context for applicability scoring
+        
+        Returns:
+            List of GuidelineMatch objects sorted by relevance
+        """
+        return self.search_guidelines(query=query, patient_context=patient_context)
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get guideline engine statistics."""
         return {

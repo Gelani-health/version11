@@ -2555,6 +2555,168 @@ async def get_knowledge_graph_stats():
 # P2: INTEGRATED CLINICAL DECISION SUPPORT
 # =============================================================================
 
+@app.post("/api/v1/p2/query", tags=["P2 - Clinical Intelligence"])
+async def p2_clinical_intelligence_query(
+    query: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+    include_guidelines: bool = True,
+    include_terminology: bool = True,
+    include_knowledge_graph: bool = True,
+):
+    """
+    P2: Unified clinical intelligence query combining all P2 components.
+    
+    This endpoint integrates:
+    - Clinical Guidelines: Evidence-based recommendations from AHA/ACC, ESC, NCCN, etc.
+    - UMLS/SNOMED Terminology: Medical concept normalization and cross-mapping
+    - Knowledge Graph: Disease-symptom-treatment relationships
+    
+    Returns comprehensive clinical insights with:
+    - Terminology matches (CUIs, ICD-10, SNOMED CT codes)
+    - Guideline recommendations with applicability scores
+    - Knowledge graph insights (treatments, comorbidities, drug interactions)
+    - Combined clinical summary
+    """
+    from app.p2_integration import get_p2_service, ClinicalContext
+    
+    try:
+        service = get_p2_service()
+        
+        # Convert patient_context to ClinicalContext if provided
+        ctx = None
+        if patient_context:
+            ctx = ClinicalContext(
+                conditions=patient_context.get("conditions", []),
+                current_medications=patient_context.get("medications", []),
+                medication_allergies=patient_context.get("allergies", []),
+                age=patient_context.get("age"),
+                gender=patient_context.get("gender"),
+                chief_complaint=patient_context.get("chief_complaint"),
+                presenting_symptoms=patient_context.get("symptoms", []),
+            )
+        
+        result = await service.query_clinical_intelligence(
+            query=query,
+            patient_context=ctx,
+            include_guidelines=include_guidelines,
+            include_terminology=include_terminology,
+            include_knowledge_graph=include_knowledge_graph,
+        )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"P2 query error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/p2/normalize", tags=["P2 - Clinical Intelligence"])
+async def p2_normalize_term(term: str):
+    """
+    P2: Normalize a medical term to standard UMLS/SNOMED terminology.
+    
+    Returns the canonical concept with:
+    - CUI (Concept Unique Identifier)
+    - Preferred name
+    - Semantic types
+    - Cross-mapped codes (ICD-10, SNOMED CT, RxNorm, MeSH)
+    """
+    from app.p2_integration import get_p2_service
+    
+    try:
+        service = get_p2_service()
+        result = await service.normalize_term(term)
+        
+        if result is None:
+            return {"found": False, "term": term}
+        
+        return {"found": True, "term": term, "concept": result}
+    
+    except Exception as e:
+        logger.error(f"P2 normalize error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/p2/drug-interactions", tags=["P2 - Clinical Intelligence"])
+async def p2_check_drug_interactions(medications: List[str]):
+    """
+    P2: Check for drug-drug interactions using the knowledge graph.
+    
+    Args:
+        medications: List of medication names to check
+    
+    Returns:
+        List of potential interactions with confidence scores
+    """
+    from app.p2_integration import get_p2_service
+    
+    try:
+        service = get_p2_service()
+        interactions = await service.get_drug_interactions(medications)
+        
+        return {
+            "medications": medications,
+            "interactions": interactions,
+            "total": len(interactions),
+        }
+    
+    except Exception as e:
+        logger.error(f"P2 drug interaction check error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/p2/clinical-pathway", tags=["P2 - Clinical Intelligence"])
+async def p2_get_clinical_pathway(
+    condition: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+):
+    """
+    P2: Get clinical pathway for a condition.
+    
+    Combines:
+    - Guideline-based recommendations
+    - Knowledge graph treatment relationships
+    - Diagnostic steps
+    
+    Returns a structured clinical pathway.
+    """
+    from app.p2_integration import get_p2_service, ClinicalContext
+    
+    try:
+        service = get_p2_service()
+        
+        ctx = None
+        if patient_context:
+            ctx = ClinicalContext(
+                conditions=patient_context.get("conditions", []),
+                current_medications=patient_context.get("medications", []),
+                age=patient_context.get("age"),
+                gender=patient_context.get("gender"),
+            )
+        
+        result = await service.get_clinical_pathway(condition, ctx)
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"P2 clinical pathway error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/p2/stats", tags=["P2 - Clinical Intelligence"])
+async def p2_get_stats():
+    """P2: Get P2 integration service statistics."""
+    from app.p2_integration import get_p2_service
+    
+    try:
+        service = get_p2_service()
+        return service.get_stats()
+    
+    except Exception as e:
+        logger.error(f"P2 stats error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 @app.post("/api/v1/clinical-support/comprehensive", tags=["P2 - Clinical Support"])
 async def comprehensive_clinical_support(
     patient_context: Dict[str, Any],

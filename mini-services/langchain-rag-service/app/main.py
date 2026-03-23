@@ -857,6 +857,152 @@ async def get_sync_history(limit: int = 10):
     }
 
 
+# =============================================================================
+# P1: BM25 SYNC FROM MEDICAL RAG
+# =============================================================================
+
+@app.post("/api/v1/sync/bm25-from-medical", tags=["P1 - Hybrid Sync"])
+async def sync_bm25_from_medical_rag(
+    max_docs: int = 10000,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Sync BM25 index from Medical RAG service.
+
+    This calls Medical RAG's hybrid sync endpoint to populate the BM25 index.
+    Used for cross-pipeline hybrid retrieval integration.
+
+    Architecture:
+    - Medical RAG (Port 3031): Has full P1 hybrid retrieval (BM25 + Semantic)
+    - LangChain RAG (Port 3032): Can sync BM25 index for hybrid queries
+    """
+    import httpx
+
+    settings = get_settings()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid/sync-from-pinecone",
+                params={"max_docs": max_docs},
+                headers={"X-API-Key": settings.CUSTOM_RAG_API_KEY},
+                timeout=60.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Medical RAG returned status {response.status_code}",
+                    "details": response.text,
+                }
+
+    except Exception as e:
+        logger.error(f"BM25 sync from Medical RAG failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+@app.get("/api/v1/sync/bm25-stats", tags=["P1 - Hybrid Sync"])
+async def get_medical_bm25_stats():
+    """
+    P1: Get BM25 index statistics from Medical RAG service.
+
+    Returns BM25 index info including document count and vocabulary size.
+    """
+    import httpx
+
+    settings = get_settings()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid/stats",
+                headers={"X-API-Key": settings.CUSTOM_RAG_API_KEY},
+                timeout=10.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Medical RAG returned status {response.status_code}",
+                }
+
+    except Exception as e:
+        logger.error(f"Failed to get BM25 stats from Medical RAG: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+@app.post("/api/v1/hybrid-proxy-query", tags=["P1 - Hybrid Sync"])
+async def proxy_hybrid_query_to_medical_rag(
+    query: str,
+    top_k: int = 50,
+    min_score: float = 0.3,
+    enable_expansion: bool = True,
+    use_multi_query: bool = True,
+    decompose_complex: bool = True,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Proxy hybrid query to Medical RAG service.
+
+    This allows LangChain RAG clients to use the full hybrid retrieval
+    capabilities of Medical RAG through this proxy endpoint.
+
+    Features:
+    - BM25 keyword search with medical synonym support
+    - Semantic search with PubMedBERT embeddings
+    - Reciprocal Rank Fusion (RRF)
+    - Recency-weighted scoring
+    - Multi-query generation
+    - Query decomposition
+    """
+    import httpx
+
+    settings = get_settings()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid-query",
+                json={
+                    "query": query,
+                    "top_k": top_k,
+                    "min_score": min_score,
+                    "enable_expansion": enable_expansion,
+                    "use_multi_query": use_multi_query,
+                    "decompose_complex": decompose_complex,
+                },
+                headers={
+                    "X-API-Key": settings.CUSTOM_RAG_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Medical RAG query failed: {response.text}",
+                )
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Medical RAG query timed out")
+    except Exception as e:
+        logger.error(f"Hybrid proxy query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

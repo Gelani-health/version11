@@ -5,6 +5,18 @@ Medical Diagnostic RAG Service - FastAPI Application
 Main entry point for the medical RAG service.
 Integrates PubMed/PMC, Pinecone, and GLM-4.7-Flash.
 
+P0 Enhancements:
+- PubMedBERT embeddings with warmup on startup
+- Pinecone connectivity verification
+- Re-embedding pipeline for existing vectors
+
+P1 Enhancements:
+- Hybrid retrieval (BM25 + Semantic search)
+- Multi-query generation for improved coverage
+- Query decomposition for complex queries
+- Reciprocal Rank Fusion (RRF)
+- Recency-weighted scoring
+
 P2 Enhancements:
 - Redis caching layer
 - Query expansion with MeSH terminology
@@ -124,6 +136,7 @@ class AppState:
     query_expander = None  # P2: Query expander
     health_probe = None  # P2: Health probe
     risk_service = None  # P2: Risk assessment
+    hybrid_engine = None  # P1: Hybrid retrieval engine
     start_time: datetime = datetime.utcnow()
 
 
@@ -1540,6 +1553,322 @@ async def test_embedding_generation(text: str = "patient has diabetes mellitus t
             "status": "error",
             "error": str(e),
         }
+
+
+# =============================================================================
+# P1: HYBRID RETRIEVAL ENDPOINTS
+# =============================================================================
+
+class HybridQueryRequest(BaseModel):
+    """Hybrid retrieval query request."""
+    query: str = Field(..., description="Medical query text", min_length=3, max_length=5000)
+    top_k: int = Field(50, ge=1, le=100, description="Number of results to retrieve")
+    min_score: float = Field(0.3, ge=0.0, le=1.0, description="Minimum relevance score")
+    enable_expansion: bool = Field(True, description="Enable query expansion")
+    use_multi_query: bool = Field(True, description="Enable multi-query generation")
+    decompose_complex: bool = Field(True, description="Decompose complex queries")
+
+
+class HybridQueryResponse(BaseModel):
+    """Hybrid retrieval query response."""
+    query: str
+    expanded_query: Optional[str] = None
+    query_variations: List[str] = []
+    results: List[Dict[str, Any]] = []
+    total_results: int = 0
+    latency_ms: float = 0.0
+    bm25_docs_count: int = 0
+    semantic_docs_count: int = 0
+    metadata: Dict[str, Any] = {}
+
+
+@app.post("/api/v1/hybrid-query", response_model=HybridQueryResponse, tags=["P1 - Hybrid Retrieval"])
+async def hybrid_query_medical_literature(
+    request: HybridQueryRequest,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Hybrid retrieval combining BM25 + Semantic search with RRF fusion.
+
+    Features:
+    - BM25 keyword search with medical synonym support
+    - Semantic search with PubMedBERT embeddings
+    - Reciprocal Rank Fusion (RRF) for combining results
+    - Recency-weighted scoring
+    - Multi-query generation for improved coverage
+    - Query decomposition for complex queries
+
+    Architecture:
+    - Medical RAG (Port 3031): PRIMARY diagnostic engine
+    - LangChain RAG (Port 3032): SECONDARY with fallback chain
+    """
+    start_time = time.time()
+
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+        from app.retrieval.multi_query import get_multi_query_generator
+        from app.retrieval.query_decomposition import get_query_decomposer
+        from app.embedding.pubmedbert_embeddings import get_pubmedbert_service
+
+        # Get hybrid engine
+        hybrid_engine = get_hybrid_engine()
+        if not hybrid_engine._initialized:
+            await hybrid_engine.initialize()
+
+        # Generate query variations if enabled
+        query_variations = []
+        if request.use_multi_query:
+            multi_query_gen = get_multi_query_generator()
+            mq_result = multi_query_gen.generate(request.query, num_variations=3)
+            query_variations = mq_result.all_queries
+
+        # Decompose complex query if enabled
+        sub_queries = []
+        if request.decompose_complex:
+            decomposer = get_query_decomposer()
+            decomp_result = decomposer.decompose(request.query)
+            if decomp_result.is_complex:
+                sub_queries = [sq.query for sq in decomp_result.sub_queries]
+
+        # Generate query embedding
+        embedder = await get_pubmedbert_service()
+        embedding_result = await embedder.embed(request.query)
+        query_embedding = embedding_result.embedding
+
+        # Perform hybrid search
+        result = await hybrid_engine.hybrid_search(
+            query=request.query,
+            query_embedding=query_embedding,
+            top_k=request.top_k,
+            min_score=request.min_score,
+            enable_expansion=request.enable_expansion,
+        )
+
+        # Format results
+        formatted_results = [r.to_dict() for r in result.results]
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return HybridQueryResponse(
+            query=request.query,
+            expanded_query=result.expanded_query,
+            query_variations=query_variations,
+            results=formatted_results,
+            total_results=len(formatted_results),
+            latency_ms=latency_ms,
+            bm25_docs_count=result.bm25_docs_count,
+            semantic_docs_count=result.semantic_docs_count,
+            metadata={
+                "bm25_latency_ms": result.bm25_latency_ms,
+                "semantic_latency_ms": result.semantic_latency_ms,
+                "fusion_latency_ms": result.fusion_latency_ms,
+                "sub_queries": sub_queries,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Hybrid query error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/hybrid/stats", tags=["P1 - Hybrid Retrieval"])
+async def get_hybrid_retrieval_stats():
+    """P1: Get hybrid retrieval engine statistics including BM25 index info."""
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        return engine.get_stats()
+
+    except Exception as e:
+        logger.error(f"Failed to get hybrid stats: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/v1/hybrid/index-document", tags=["P1 - Hybrid Retrieval"])
+async def add_document_to_bm25(
+    doc_id: str,
+    content: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Add a document to the BM25 index.
+
+    Args:
+        doc_id: Unique document identifier
+        content: Document text content
+        metadata: Optional metadata dictionary
+    """
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        engine.bm25.add_document(doc_id, content, metadata or {})
+
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "total_documents": engine.bm25.total_docs,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to add document to BM25: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/hybrid/index-document/{doc_id}", tags=["P1 - Hybrid Retrieval"])
+async def remove_document_from_bm25(
+    doc_id: str,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """P1: Remove a document from the BM25 index."""
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        engine.bm25.remove_document(doc_id)
+
+        return {
+            "status": "success",
+            "doc_id": doc_id,
+            "total_documents": engine.bm25.total_docs,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to remove document from BM25: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/hybrid/sync-from-pinecone", tags=["P1 - Hybrid Retrieval"])
+async def sync_bm25_from_pinecone(
+    max_docs: int = 10000,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P1: Sync BM25 index from Pinecone vectors.
+
+    This populates the BM25 index with documents from the vector database.
+    Used for cross-pipeline sync with LangChain RAG (Port 3032).
+
+    Args:
+        max_docs: Maximum number of documents to sync
+    """
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        if not engine._initialized:
+            await engine.initialize()
+
+        result = await engine.sync_bm25_from_pinecone(max_docs=max_docs)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"BM25 sync failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/hybrid/clear-index", tags=["P1 - Hybrid Retrieval"])
+async def clear_bm25_index(
+    authenticated: bool = Depends(verify_api_key),
+):
+    """P1: Clear the entire BM25 index."""
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        result = engine.clear_bm25_index()
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to clear BM25 index: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/recency-score", tags=["P1 - Hybrid Retrieval"])
+async def calculate_recency_score(
+    publication_date: str,
+    publication_type: str = "general",
+):
+    """
+    P1: Calculate recency score for a publication.
+
+    Args:
+        publication_date: Publication date (YYYY-MM-DD)
+        publication_type: Type of publication for decay rate
+            - guidelines: 2-year decay
+            - clinical_trials: 1-year decay
+            - case_reports: 5-year decay
+            - general: 3-year decay (default)
+    """
+    try:
+        from app.retrieval.hybrid_retrieval import get_hybrid_engine
+
+        engine = get_hybrid_engine()
+        score = engine._calculate_recency_score(publication_date, publication_type)
+
+        return {
+            "publication_date": publication_date,
+            "publication_type": publication_type,
+            "recency_score": round(score, 4),
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to calculate recency score: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/multi-query", tags=["P1 - Hybrid Retrieval"])
+async def generate_multi_query(
+    query: str,
+    num_variations: int = 3,
+):
+    """
+    P1: Generate multiple query variations for improved retrieval coverage.
+
+    Strategies:
+    - Synonym expansion (medical synonyms)
+    - Abbreviation expansion (medical abbreviations)
+    - Query simplification (remove stop words)
+    - Key term extraction
+    """
+    try:
+        from app.retrieval.multi_query import get_multi_query_generator
+
+        generator = get_multi_query_generator()
+        result = generator.generate(query, num_variations=num_variations)
+
+        return result.to_dict()
+
+    except Exception as e:
+        logger.error(f"Multi-query generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/query-decompose", tags=["P1 - Hybrid Retrieval"])
+async def decompose_query(query: str):
+    """
+    P1: Decompose a complex medical query into simpler sub-queries.
+
+    Strategies:
+    - Connective-based: Split by 'and', 'vs', 'or'
+    - Pattern-based: Match known complex query patterns
+    - Symptom-based: Split symptom lists
+    """
+    try:
+        from app.retrieval.query_decomposition import get_query_decomposer
+
+        decomposer = get_query_decomposer()
+        result = decomposer.decompose(query)
+
+        return result.to_dict()
+
+    except Exception as e:
+        logger.error(f"Query decomposition failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

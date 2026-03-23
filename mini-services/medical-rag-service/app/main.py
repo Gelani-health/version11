@@ -2804,6 +2804,316 @@ async def comprehensive_clinical_support(
     return result
 
 
+# =============================================================================
+# P3: MULTI-MODAL CLINICAL INTELLIGENCE ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/multimodal/analyze", tags=["P3 - Multi-Modal"])
+async def analyze_multimodal_clinical_input(
+    inputs: List[Dict[str, Any]],
+    patient_context: Optional[Dict[str, Any]] = None,
+    enable_cross_modal: bool = True,
+):
+    """
+    P3: Analyze multiple clinical inputs with multi-modal AI.
+    
+    Supports:
+    - Radiology images (X-Ray, CT, MRI, Ultrasound)
+    - Dermatology images (skin lesions)
+    - Pathology images (histopathology)
+    - Medical videos (procedures, endoscopy, gait analysis)
+    - Audio recordings (heart sounds, lung sounds, speech)
+    
+    Each input should have:
+    - input_type: radiology_image, dermatology_image, pathology_image, 
+                  endoscopy_video, procedure_video, gait_video,
+                  heart_sound, lung_sound, patient_speech
+    - data: base64 encoded file content
+    - metadata: optional modality-specific metadata
+    """
+    from app.multimodal import get_multimodal_service, ClinicalInput, ClinicalInputType
+    import base64
+    
+    try:
+        service = get_multimodal_service()
+        
+        # Convert inputs
+        clinical_inputs = []
+        for inp in inputs:
+            input_type_str = inp.get("input_type", "general")
+            
+            # Map input type string to enum
+            try:
+                input_type = ClinicalInputType(input_type_str)
+            except ValueError:
+                input_type = ClinicalInputType.RADIOLOGY_IMAGE
+            
+            # Decode base64 data
+            data_str = inp.get("data", "")
+            if data_str.startswith("data:"):
+                # Remove data URL prefix
+                data_str = data_str.split(",", 1)[1] if "," in data_str else data_str
+            data = base64.b64decode(data_str)
+            
+            clinical_inputs.append(ClinicalInput(
+                input_type=input_type,
+                data=data,
+                metadata=inp.get("metadata"),
+                clinical_context=inp.get("clinical_context"),
+            ))
+        
+        result = await service.analyze_clinical_input(
+            inputs=clinical_inputs,
+            patient_context=patient_context,
+            enable_cross_modal=enable_cross_modal,
+        )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"Multi-modal analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# P3: MULTI-MODAL REQUEST MODELS
+# =============================================================================
+
+class MultiModalImageRequest(BaseModel):
+    """Request for medical image analysis."""
+    image_data: str = Field(..., description="Base64 encoded image data")
+    modality: str = Field("general", description="Image modality: xray, ct, mri, ultrasound, mammogram, dermatology, pathology")
+    anatomical_region: str = Field("general", description="Anatomical region: chest, abdomen, head, etc.")
+    patient_context: Optional[Dict[str, Any]] = None
+
+
+class MultiModalVideoRequest(BaseModel):
+    """Request for medical video analysis."""
+    video_data: str = Field(..., description="Base64 encoded video data")
+    video_type: str = Field("general", description="Video type: procedure, surgical, gait_analysis, endoscopy, rehabilitation")
+    patient_context: Optional[Dict[str, Any]] = None
+
+
+class MultiModalAudioRequest(BaseModel):
+    """Request for medical audio analysis."""
+    audio_data: str = Field(..., description="Base64 encoded audio data")
+    audio_type: str = Field("general", description="Audio type: heart_sounds, lung_sounds, speech, breathing, cough")
+    patient_context: Optional[Dict[str, Any]] = None
+
+
+class MultiModalDermatologyRequest(BaseModel):
+    """Request for dermatology image analysis."""
+    image_data: str = Field(..., description="Base64 encoded skin lesion image")
+    body_location: Optional[str] = None
+    patient_context: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/v1/multimodal/image", tags=["P3 - Multi-Modal"])
+async def analyze_medical_image(request: MultiModalImageRequest):
+    """
+    P3: Analyze a medical image.
+    
+    Supported modalities:
+    - xray: X-Ray images
+    - ct: CT scans
+    - mri: MRI scans
+    - ultrasound: Ultrasound images
+    - mammogram: Mammography
+    - dermatology: Skin lesion images
+    - pathology: Histopathology slides
+    - endoscopy: Endoscopic images
+    - fundoscopy: Fundoscopic images
+    
+    Returns comprehensive analysis with findings, impression, and recommendations.
+    """
+    from app.multimodal import get_multimodal_service
+    import base64
+    
+    try:
+        service = get_multimodal_service()
+        
+        # Decode base64
+        image_data = request.image_data
+        if image_data.startswith("data:"):
+            image_data = image_data.split(",", 1)[1] if "," in image_data else image_data
+        image_bytes = base64.b64decode(image_data)
+        
+        result = await service.analyze_radiology(
+            image_data=image_bytes,
+            modality=request.modality,
+            anatomical_region=request.anatomical_region,
+            patient_context=request.patient_context,
+        )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"Image analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/multimodal/video", tags=["P3 - Multi-Modal"])
+async def analyze_medical_video(request: MultiModalVideoRequest):
+    """
+    P3: Analyze a medical video.
+    
+    Supported video types:
+    - procedure: Medical procedures
+    - surgical: Surgical operations
+    - gait_analysis: Patient walking/movement assessment
+    - endoscopy: Endoscopic procedures
+    - rehabilitation: Physical therapy exercises
+    - teleconsultation: Video consultations
+    - ultrasound_video: Echocardiograms, etc.
+    
+    Returns comprehensive analysis with findings, key frames, and recommendations.
+    """
+    from app.multimodal import get_multimodal_service
+    import base64
+    
+    try:
+        service = get_multimodal_service()
+        
+        # Decode base64
+        video_data = request.video_data
+        if video_data.startswith("data:"):
+            video_data = video_data.split(",", 1)[1] if "," in video_data else video_data
+        video_bytes = base64.b64decode(video_data)
+        
+        result = await service.analyze_medical_video(
+            video_data=video_bytes,
+            video_type=request.video_type,
+            patient_context=request.patient_context,
+        )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"Video analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/multimodal/audio", tags=["P3 - Multi-Modal"])
+async def analyze_medical_audio(request: MultiModalAudioRequest):
+    """
+    P3: Analyze medical audio recording.
+    
+    Supported audio types:
+    - heart_sounds: Cardiac auscultation
+    - lung_sounds: Pulmonary auscultation
+    - bowel_sounds: Abdominal auscultation
+    - speech: Patient speech analysis
+    - breathing: Respiratory patterns
+    - cough: Cough analysis
+    - voice_biomarker: Voice health indicators
+    
+    Returns analysis with findings, interpretation, and recommendations.
+    """
+    from app.multimodal import get_multimodal_service
+    import base64
+    
+    try:
+        service = get_multimodal_service()
+        
+        # Decode base64
+        audio_data = request.audio_data
+        if audio_data.startswith("data:"):
+            audio_data = audio_data.split(",", 1)[1] if "," in audio_data else audio_data
+        audio_bytes = base64.b64decode(audio_data)
+        
+        # Route to appropriate analyzer
+        if request.audio_type == "heart_sounds":
+            result = await service.analyze_heart_sounds(
+                audio_data=audio_bytes,
+                patient_context=request.patient_context,
+            )
+        elif request.audio_type == "lung_sounds":
+            result = await service.analyze_lung_sounds(
+                audio_data=audio_bytes,
+                patient_context=request.patient_context,
+            )
+        else:
+            result = await service._orchestrator.analyze_single_audio(
+                audio_data=audio_bytes,
+                audio_type=request.audio_type,
+                context=request.patient_context,
+            )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"Audio analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/multimodal/dermatology", tags=["P3 - Multi-Modal"])
+async def analyze_dermatology_image(request: MultiModalDermatologyRequest):
+    """
+    P3: Analyze dermatology/skin lesion image.
+    
+    Provides:
+    - Lesion description (size, shape, color, borders)
+    - ABCDE assessment
+    - Differential diagnosis
+    - Risk stratification
+    - Management recommendations
+    """
+    from app.multimodal import get_multimodal_service
+    import base64
+    
+    try:
+        service = get_multimodal_service()
+        
+        # Decode base64
+        image_data = request.image_data
+        if image_data.startswith("data:"):
+            image_data = image_data.split(",", 1)[1] if "," in image_data else image_data
+        image_bytes = base64.b64decode(image_data)
+        
+        result = await service.analyze_dermatology(
+            image_data=image_bytes,
+            body_location=request.body_location,
+            patient_context=request.patient_context,
+        )
+        
+        return result.to_dict()
+    
+    except Exception as e:
+        logger.error(f"Dermatology analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/multimodal/stats", tags=["P3 - Multi-Modal"])
+async def get_multimodal_stats():
+    """P3: Get multi-modal service statistics."""
+    from app.multimodal import get_multimodal_service
+    
+    try:
+        service = get_multimodal_service()
+        return service.get_stats()
+    
+    except Exception as e:
+        logger.error(f"Stats error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/v1/multimodal/supported-types", tags=["P3 - Multi-Modal"])
+async def get_supported_multimodal_types():
+    """P3: Get all supported input types, modalities, and regions."""
+    from app.multimodal.image_analyzer import ImageModality, AnatomicalRegion
+    from app.multimodal.video_analyzer import VideoType
+    from app.multimodal.audio_analyzer import AudioType
+    from app.multimodal.service import ClinicalInputType
+    
+    return {
+        "input_types": [it.value for it in ClinicalInputType],
+        "image_modalities": [m.value for m in ImageModality],
+        "anatomical_regions": [r.value for r in AnatomicalRegion],
+        "video_types": [vt.value for vt in VideoType],
+        "audio_types": [at.value for at in AudioType],
+    }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

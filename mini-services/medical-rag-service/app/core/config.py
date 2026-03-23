@@ -124,9 +124,18 @@ class Settings(BaseSettings):
     )
     
     # ===== Embedding Configuration =====
+    # PubMedBERT: Domain-specific medical embeddings (RECOMMENDED)
+    # - NeuML/pubmedbert-base-embeddings: 768-dim, optimized for biomedical text
+    # - 15-25% better performance on medical queries
+    #
+    # Alternative: all-mpnet-base-v2 (general-purpose, 768-dim)
+    PUBMEDBERT_MODEL: str = Field(
+        default="NeuML/pubmedbert-base-embeddings",
+        description="PubMedBERT model for medical embeddings (768-dim)"
+    )
     EMBEDDING_MODEL: str = Field(
-        default="all-mpnet-base-v2",
-        description="Embedding model (all-mpnet-base-v2: 768-dim, public)"
+        default="NeuML/pubmedbert-base-embeddings",
+        description="Embedding model (PubMedBERT recommended for medical RAG)"
     )
     EMBEDDING_DEVICE: str = Field(
         default="cpu",
@@ -134,11 +143,15 @@ class Settings(BaseSettings):
     )
     EMBEDDING_DIMENSION: int = Field(
         default=768,
-        description="Embedding vector dimension"
+        description="Embedding vector dimension (768 for PubMedBERT)"
     )
     EMBEDDING_BATCH_SIZE: int = Field(
         default=32,
         description="Batch size for embedding generation"
+    )
+    EMBEDDING_WARMUP_ON_STARTUP: bool = Field(
+        default=True,
+        description="Warmup embedding model on application startup"
     )
     
     # ===== Retrieval Configuration =====

@@ -202,15 +202,15 @@ class RAGRetrievalEngine:
         )
     
     async def _generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for query text using sentence-transformers."""
-        # Use the same embedding model as the ingestion pipeline
-        from app.embedding.embedding_pipeline import PubMedBERTEmbedder
+        """Generate embedding for query text using PubMedBERT."""
+        # Use the new PubMedBERT embedding service
+        from app.embedding.pubmedbert_embeddings import get_pubmedbert_service
         
-        # Create embedder instance (will reuse cached model)
-        embedder = PubMedBERTEmbedder()
-        embedding = await embedder.embed(text)
+        # Get embedding service (will reuse cached model)
+        service = await get_pubmedbert_service()
+        result = await service.embed(text)
         
-        return embedding
+        return result.embedding
     
     async def _search_pinecone(
         self,

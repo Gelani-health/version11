@@ -249,16 +249,15 @@ class EmbeddingOptimizer:
 
     def __init__(
         self,
-        model_name: str = "all-mpnet-base-v2",
+        model_name: str = None,  # Will use config default
         cache_size: int = 50000,
         batch_size: int = 32,
         max_concurrent: int = 4,
     ):
-        self.model_name = model_name
+        self.settings = get_settings()
+        self.model_name = model_name or self.settings.EMBEDDING_MODEL
         self.batch_size = batch_size
         self.max_concurrent = max_concurrent
-
-        self.settings = get_settings()
 
         # Initialize caches
         self._memory_cache = LRUCache(max_size=cache_size, ttl_seconds=86400)

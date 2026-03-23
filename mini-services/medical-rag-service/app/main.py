@@ -142,11 +142,26 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Medical Diagnostic RAG Service")
     logger.info("=" * 60)
     logger.info(f"Pinecone Index: {settings.PINECONE_INDEX_NAME}")
+    logger.info(f"Pinecone Namespace: {settings.PINECONE_NAMESPACE}")
     logger.info(f"NCBI Email: {settings.NCBI_EMAIL}")
-    logger.info(f"GLM Model: {settings.GLM_MODEL} (via Together AI)")
+    logger.info(f"GLM Model: {settings.GLM_MODEL} (via Z.AI)")
     logger.info(f"Embedding Model: {settings.EMBEDDING_MODEL}")
     logger.info("-" * 60)
-    logger.info("Service ready - components will initialize on demand")
+    
+    # P0: Warmup embedding model on startup
+    if settings.EMBEDDING_WARMUP_ON_STARTUP:
+        logger.info("Warming up embedding model...")
+        try:
+            from app.embedding.pubmedbert_embeddings import warmup_embedding_model
+            warmup_result = await warmup_embedding_model()
+            if warmup_result.get("status") == "success":
+                logger.info(f"Embedding model warmup complete: {warmup_result.get('model_info')}")
+            else:
+                logger.warning(f"Embedding model warmup failed: {warmup_result.get('error')}")
+        except Exception as e:
+            logger.warning(f"Embedding model warmup error (non-critical): {e}")
+    
+    logger.info("Service ready - components initialized")
     
     yield
     
@@ -1450,6 +1465,141 @@ async def clear_embedding_cache(
     await optimizer.clear_cache()
 
     return {"status": "success", "message": "Embedding cache cleared"}
+
+
+# =============================================================================
+# P0: PUBMEDBERT EMBEDDING STATUS ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/embeddings/model-status", tags=["P0 - Embeddings"])
+async def get_embedding_model_status():
+    """
+    P0: Get PubMedBERT embedding model status.
+
+    Returns model information including:
+    - Model name and dimension
+    - Device (CPU/GPU)
+    - Warmup status
+    - Statistics
+    """
+    from app.embedding.pubmedbert_embeddings import get_pubmedbert_service
+
+    try:
+        service = await get_pubmedbert_service()
+        return {
+            "status": "ready",
+            "model_info": service.get_model_info(),
+            "stats": service.get_stats(),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+@app.post("/api/v1/embeddings/warmup", tags=["P0 - Embeddings"])
+async def warmup_embedding_model_endpoint(
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P0: Manually trigger embedding model warmup.
+
+    Useful for pre-loading the model after deployment.
+    """
+    from app.embedding.pubmedbert_embeddings import warmup_embedding_model
+
+    result = await warmup_embedding_model()
+    return result
+
+
+@app.get("/api/v1/embeddings/test", tags=["P0 - Embeddings"])
+async def test_embedding_generation(text: str = "patient has diabetes mellitus type 2"):
+    """
+    P0: Test embedding generation with sample text.
+
+    Returns embedding result for verification.
+    """
+    from app.embedding.pubmedbert_embeddings import get_pubmedbert_service
+
+    try:
+        service = await get_pubmedbert_service()
+        result = await service.embed(text)
+
+        return {
+            "status": "success",
+            "text": text,
+            "embedding_dimension": result.dimension,
+            "model": result.model,
+            "cached": result.cached,
+            "generation_time_ms": round(result.generation_time_ms, 2),
+            "embedding_preview": result.embedding[:10],  # First 10 values
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+# =============================================================================
+# P0: RE-EMBEDDING PIPELINE ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/reembedding/status", tags=["P0 - Reembedding"])
+async def get_reembedding_status():
+    """
+    P0: Get Pinecone index status and re-embedding requirements.
+
+    Returns:
+    - Vector count
+    - Estimated migration time
+    - Model information
+    """
+    from app.embedding.reembed_pipeline import estimate_migration_time
+
+    try:
+        estimate = await estimate_migration_time()
+
+        return {
+            "index_name": settings.PINECONE_INDEX_NAME,
+            "namespace": settings.PINECONE_NAMESPACE,
+            "current_model": settings.EMBEDDING_MODEL,
+            "embedding_dimension": settings.EMBEDDING_DIMENSION,
+            **estimate,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+@app.post("/api/v1/reembedding/start", tags=["P0 - Reembedding"])
+async def start_reembedding(
+    batch_size: int = 100,
+    dry_run: bool = False,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P0: Start re-embedding migration for existing vectors.
+
+    Args:
+        batch_size: Number of vectors per batch
+        dry_run: If True, don't actually update vectors
+
+    WARNING: This operation can take significant time for large indexes.
+    """
+    from app.embedding.reembed_pipeline import run_reembedding
+
+    try:
+        result = await run_reembedding(batch_size=batch_size, dry_run=dry_run)
+        return result
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
 
 
 # ===== Error Handlers =====

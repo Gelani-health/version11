@@ -11,6 +11,15 @@ P2 Enhancements:
 - Prometheus metrics export
 - Deep health probes with circuit breaker
 - Risk assessment endpoints
+
+P3 Enhancements:
+- Clinical Alert Management System (SBAR format)
+- Lab Result Interpretation Engine
+- Antimicrobial Stewardship Module
+- Diagnostic Imaging Decision Support (ACR Appropriateness)
+- Differential Diagnosis Engine
+- Pediatric Clinical Decision Support
+- Geriatric Assessment Module (Beers Criteria, Frailty)
 """
 
 import asyncio
@@ -751,6 +760,545 @@ async def check_rate_limit(
     
     cache = await get_cache_manager()
     result = await cache.check_rate_limit(user_id, endpoint)
+    return result
+
+
+# =============================================================================
+# P3: CLINICAL ALERT MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/alerts/create", tags=["P3 - Alerts"])
+async def create_clinical_alert(
+    alert_type: str,
+    category: str,
+    severity: str,
+    situation: str,
+    background: str,
+    assessment: str,
+    recommendation: str,
+    patient_id: Optional[str] = None,
+    triggering_data: Optional[Dict[str, Any]] = None,
+):
+    """
+    P3: Create a clinical alert with SBAR format.
+    
+    Categories: drug_interaction, allergy, dosing, lab_critical, diagnostic, safety
+    Severities: info, warning, critical, blocker
+    """
+    from app.alerts.alert_management import get_alert_manager, AlertCategory, AlertSeverity
+    
+    manager = get_alert_manager()
+    
+    # Map strings to enums
+    category_map = {c.value: c for c in AlertCategory}
+    severity_map = {s.value: s for s in AlertSeverity}
+    
+    if category.lower() not in category_map:
+        raise HTTPException(status_code=400, detail=f"Invalid category. Use: {list(category_map.keys())}")
+    if severity.lower() not in severity_map:
+        raise HTTPException(status_code=400, detail=f"Invalid severity. Use: {list(severity_map.keys())}")
+    
+    alert = await manager.create_alert(
+        alert_type=alert_type,
+        category=category_map[category.lower()],
+        severity=severity_map[severity.lower()],
+        situation=situation,
+        background=background,
+        assessment=assessment,
+        recommendation=recommendation,
+        patient_id=patient_id,
+        triggering_data=triggering_data,
+    )
+    
+    return alert.to_dict()
+
+
+@app.post("/api/v1/alerts/{alert_id}/acknowledge", tags=["P3 - Alerts"])
+async def acknowledge_alert(
+    alert_id: str,
+    acknowledged_by: str,
+    notes: Optional[str] = None,
+):
+    """P3: Acknowledge a clinical alert."""
+    from app.alerts.alert_management import get_alert_manager
+    
+    manager = get_alert_manager()
+    alert = await manager.acknowledge_alert(alert_id, acknowledged_by, notes)
+    
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    return alert.to_dict()
+
+
+@app.post("/api/v1/alerts/{alert_id}/override", tags=["P3 - Alerts"])
+async def override_alert(
+    alert_id: str,
+    overridden_by: str,
+    override_reason: str,
+):
+    """P3: Override a clinical alert with documentation."""
+    from app.alerts.alert_management import get_alert_manager
+    
+    manager = get_alert_manager()
+    alert, errors = await manager.override_alert(alert_id, overridden_by, override_reason)
+    
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors, "alert": alert.to_dict()})
+    
+    return alert.to_dict()
+
+
+@app.get("/api/v1/alerts/patient/{patient_id}", tags=["P3 - Alerts"])
+async def get_patient_alerts(patient_id: str, active_only: bool = True):
+    """P3: Get all alerts for a patient."""
+    from app.alerts.alert_management import get_alert_manager
+    
+    manager = get_alert_manager()
+    alerts = manager.get_patient_alerts(patient_id, active_only)
+    return {"alerts": [a.to_dict() for a in alerts], "total": len(alerts)}
+
+
+@app.get("/api/v1/alerts/analytics", tags=["P3 - Alerts"])
+async def get_alert_analytics():
+    """P3: Get alert analytics and effectiveness metrics."""
+    from app.alerts.alert_management import get_alert_manager
+    
+    manager = get_alert_manager()
+    return manager.get_alert_analytics()
+
+
+# =============================================================================
+# P3: LAB INTERPRETATION ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/labs/interpret", tags=["P3 - Labs"])
+async def interpret_lab_result(
+    test_code: str,
+    value: float,
+    age: int,
+    gender: str,
+    is_pregnant: bool = False,
+    current_medications: Optional[List[str]] = None,
+):
+    """
+    P3: Interpret a single laboratory result with clinical context.
+    
+    Provides reference ranges, abnormality classification, and clinical significance.
+    """
+    from app.labs.lab_interpretation import get_lab_engine
+    
+    engine = get_lab_engine()
+    interpretation = engine.interpret_result(
+        test_code=test_code,
+        value=value,
+        age=age,
+        gender=gender,
+        is_pregnant=is_pregnant,
+        current_medications=current_medications,
+    )
+    
+    return interpretation.to_dict()
+
+
+@app.post("/api/v1/labs/interpret-panel", tags=["P3 - Labs"])
+async def interpret_lab_panel(
+    results: Dict[str, float],
+    age: int,
+    gender: str,
+    is_pregnant: bool = False,
+    current_medications: Optional[List[str]] = None,
+):
+    """
+    P3: Interpret a panel of lab results with cross-analysis.
+    
+    Detects patterns and calculates derived values (e.g., eGFR).
+    """
+    from app.labs.lab_interpretation import get_lab_engine
+    
+    engine = get_lab_engine()
+    interpretation = engine.interpret_panel(
+        results=results,
+        age=age,
+        gender=gender,
+        is_pregnant=is_pregnant,
+        current_medications=current_medications,
+    )
+    
+    return interpretation
+
+
+@app.get("/api/v1/labs/reference-ranges/{test_code}", tags=["P3 - Labs"])
+async def get_reference_ranges(test_code: str):
+    """P3: Get all reference ranges for a lab test."""
+    from app.labs.lab_interpretation import get_lab_engine, REFERENCE_RANGES
+    
+    test_upper = test_code.upper()
+    if test_upper not in REFERENCE_RANGES:
+        return {"error": f"Unknown test: {test_code}", "available_tests": list(REFERENCE_RANGES.keys())[:20]}
+    
+    ranges = REFERENCE_RANGES[test_upper]
+    return {
+        "test_code": test_upper,
+        "reference_ranges": [
+            {
+                "age_range": f"{r.age_min or 0}-{r.age_max or '∞'} years",
+                "gender": r.gender or "all",
+                "normal_range": f"{r.low_normal}-{r.high_normal} {r.unit}",
+                "critical_values": f"{r.critical_low}-{r.critical_high}" if r.critical_low else "Not defined",
+            }
+            for r in ranges
+        ],
+    }
+
+
+# =============================================================================
+# P3: ANTIMICROBIAL STEWARDSHIP ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/antimicrobial/recommend", tags=["P3 - Antimicrobial"])
+async def get_antimicrobial_recommendation(
+    infection_type: str,
+    severity: str = "moderate",
+    allergies: Optional[List[str]] = None,
+    renal_function: Optional[float] = None,
+    current_medications: Optional[List[str]] = None,
+    pregnancy: bool = False,
+):
+    """
+    P3: Get empiric antimicrobial recommendations.
+    
+    Infection types: CAP_OUTPATIENT_HEALTHY, CAP_OUTPATIENT_COMORBID, CAP_INPATIENT,
+    UTI_UNCOMPLICATED, PYELONEPHRITIS_OUTPATIENT, CELLULITIS_NONPURULENT, etc.
+    """
+    from app.antimicrobial.stewardship_engine import get_stewardship_engine, Severity
+    
+    engine = get_stewardship_engine()
+    
+    severity_enum = Severity.MODERATE
+    if severity.lower() == "mild":
+        severity_enum = Severity.MILD
+    elif severity.lower() == "severe":
+        severity_enum = Severity.SEVERE
+    elif severity.lower() == "critical":
+        severity_enum = Severity.CRITICAL
+    
+    result = await engine.get_empiric_recommendation(
+        infection_type=infection_type,
+        severity=severity_enum,
+        allergies=allergies,
+        renal_function=renal_function,
+        current_medications=current_medications,
+        pregnancy=pregnancy,
+    )
+    
+    return result
+
+
+@app.post("/api/v1/antimicrobial/iv-to-po", tags=["P3 - Antimicrobial"])
+async def check_iv_to_po_conversion(
+    drug_name: str,
+    patient_status: Dict[str, Any],
+):
+    """
+    P3: Check if IV-to-PO conversion is appropriate.
+    
+    Patient status should include: hemodynamically_stable, tolerating_oral, gi_obstruction
+    """
+    from app.antimicrobial.stewardship_engine import get_stewardship_engine
+    
+    engine = get_stewardship_engine()
+    result = await engine.check_iv_to_po_conversion(drug_name, patient_status)
+    
+    return result
+
+
+@app.post("/api/v1/antimicrobial/organism-directed", tags=["P3 - Antimicrobial"])
+async def get_organism_directed_therapy(
+    organism: str,
+    susceptibilities: Dict[str, str],
+    infection_site: Optional[str] = None,
+):
+    """
+    P3: Get culture-directed therapy recommendations.
+    
+    Susceptibilities: Dict mapping antibiotic to S/I/R
+    """
+    from app.antimicrobial.stewardship_engine import get_stewardship_engine
+    
+    engine = get_stewardship_engine()
+    result = await engine.get_organism_directed_therapy(
+        organism=organism,
+        susceptibilities=susceptibilities,
+        infection_site=infection_site,
+    )
+    
+    return result
+
+
+# =============================================================================
+# P3: IMAGING DECISION SUPPORT ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/imaging/recommend", tags=["P3 - Imaging"])
+async def get_imaging_recommendation(
+    clinical_scenario: str,
+    patient_data: Optional[Dict[str, Any]] = None,
+):
+    """
+    P3: Get imaging recommendations based on ACR Appropriateness Criteria.
+    
+    Clinical scenarios: HEADACHE_ACUTE_SUDDEN_SEVERE, CHEST_PAIN_ACUTE_CARDIAC_SUSPECTED,
+    ABDOMINAL_PAIN_ACUTE_RIGHT_LOWER_QUADRANT, LOW_BACK_PAIN_ACUTE_NO_RED_FLAGS, etc.
+    
+    Patient data can include: age, pregnant, eGFR, allergies, medications, conditions
+    """
+    from app.imaging.imaging_decision_support import get_imaging_support
+    
+    support = get_imaging_support()
+    result = await support.get_imaging_recommendation(clinical_scenario, patient_data)
+    
+    return result
+
+
+@app.post("/api/v1/imaging/pregnancy-assessment", tags=["P3 - Imaging"])
+async def assess_pregnancy_imaging(
+    clinical_scenario: str,
+    gestational_age_weeks: Optional[int] = None,
+):
+    """P3: Assess imaging options for pregnant patient."""
+    from app.imaging.imaging_decision_support import get_imaging_support
+    
+    support = get_imaging_support()
+    result = await support.assess_pregnancy_imaging(clinical_scenario, gestational_age_weeks)
+    
+    return result
+
+
+# =============================================================================
+# P3: DIFFERENTIAL DIAGNOSIS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/differential-diagnosis", tags=["P3 - Diagnosis"])
+async def generate_differential_diagnosis(
+    chief_complaint: str,
+    presentation_type: str,
+    patient_data: Optional[Dict[str, Any]] = None,
+    additional_symptoms: Optional[List[str]] = None,
+):
+    """
+    P3: Generate differential diagnoses based on clinical presentation.
+    
+    Chief complaints: CHEST_PAIN, ABDOMINAL_PAIN, DYSPNEA, FEVER, HEADACHE
+    
+    Presentation types vary by complaint:
+    - CHEST_PAIN: acute_severe, pleuritic
+    - ABDOMINAL_PAIN: right_lower_quadrant, right_upper_quadrant, epigastric
+    - DYSPNEA: acute, chronic_progressive
+    - HEADACHE: thunderclap, chronic_recurrent
+    """
+    from app.differential.differential_diagnosis import get_ddx_engine
+    
+    engine = get_ddx_engine()
+    result = await engine.generate_differential(
+        chief_complaint=chief_complaint,
+        presentation_type=presentation_type,
+        patient_data=patient_data,
+        additional_symptoms=additional_symptoms,
+    )
+    
+    return result
+
+
+# =============================================================================
+# P3: PEDIATRIC SUPPORT ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/pediatric/dosing", tags=["P3 - Pediatric"])
+async def calculate_pediatric_dose(
+    medication: str,
+    weight_kg: float,
+    indication: Optional[str] = None,
+    age_months: Optional[int] = None,
+):
+    """
+    P3: Calculate weight-based dose for pediatric patient.
+    
+    Medications: ACETAMINOPHEN, IBUPROFEN, AMOXICILLIN, AZITHROMYCIN, etc.
+    """
+    from app.pediatric.pediatric_support import get_pediatric_support
+    
+    support = get_pediatric_support()
+    result = await support.calculate_dose(
+        medication=medication,
+        weight_kg=weight_kg,
+        indication=indication,
+        age_months=age_months,
+    )
+    
+    return result
+
+
+@app.post("/api/v1/pediatric/vitals", tags=["P3 - Pediatric"])
+async def assess_pediatric_vitals(
+    age_months: int,
+    heart_rate: int,
+    respiratory_rate: int,
+    systolic_bp: int,
+    diastolic_bp: int,
+    temperature: float,
+):
+    """P3: Assess pediatric vital signs against age-appropriate normal ranges."""
+    from app.pediatric.pediatric_support import get_pediatric_support
+    
+    support = get_pediatric_support()
+    result = await support.assess_vital_signs(
+        age_months=age_months,
+        heart_rate=heart_rate,
+        respiratory_rate=respiratory_rate,
+        systolic_bp=systolic_bp,
+        diastolic_bp=diastolic_bp,
+        temperature=temperature,
+    )
+    
+    return result
+
+
+@app.post("/api/v1/pediatric/pews", tags=["P3 - Pediatric"])
+async def calculate_pews_score(
+    age_months: int,
+    behavior: str,
+    cardiovascular: str,
+    respiratory: str,
+):
+    """
+    P3: Calculate Pediatric Early Warning Score (PEWS).
+    
+    Behavior: normal, sleeping, irritable, lethargic, reduced_response
+    Cardiovascular: normal, pale, gray, mottled
+    Respiratory: normal, 10_above_normal, 20_above_normal, retractions, o2_required
+    """
+    from app.pediatric.pediatric_support import get_pediatric_support
+    
+    support = get_pediatric_support()
+    result = await support.calculate_pews(
+        age_months=age_months,
+        behavior=behavior,
+        cardiovascular=cardiovascular,
+        respiratory=respiratory,
+    )
+    
+    return result
+
+
+@app.get("/api/v1/pediatric/milestones/{age_months}", tags=["P3 - Pediatric"])
+async def check_developmental_milestones(age_months: int):
+    """P3: Get expected developmental milestones for age."""
+    from app.pediatric.pediatric_support import get_pediatric_support
+    
+    support = get_pediatric_support()
+    result = await support.check_developmental_milestones(age_months)
+    
+    return result
+
+
+# =============================================================================
+# P3: GERIATRIC SUPPORT ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/geriatric/beers-review", tags=["P3 - Geriatric"])
+async def review_medications_beers(
+    medications: List[str],
+    age: int,
+    conditions: Optional[List[str]] = None,
+    creatinine_clearance: Optional[float] = None,
+):
+    """
+    P3: Review medications against Beers Criteria for older adults.
+    
+    Identifies potentially inappropriate medications for patients 65+.
+    """
+    from app.geriatric.geriatric_support import get_geriatric_support
+    
+    support = get_geriatric_support()
+    result = await support.review_medications_beers(
+        medications=medications,
+        age=age,
+        conditions=conditions,
+        creatinine_clearance=creatinine_clearance,
+    )
+    
+    return result
+
+
+@app.post("/api/v1/geriatric/anticholinergic-burden", tags=["P3 - Geriatric"])
+async def calculate_anticholinergic_burden(medications: List[str]):
+    """
+    P3: Calculate total anticholinergic burden score.
+    
+    Higher scores correlate with cognitive impairment, falls, delirium risk.
+    """
+    from app.geriatric.geriatric_support import get_geriatric_support
+    
+    support = get_geriatric_support()
+    result = await support.calculate_anticholinergic_burden(medications)
+    
+    return result
+
+
+@app.post("/api/v1/geriatric/falls-risk", tags=["P3 - Geriatric"])
+async def assess_falls_risk(
+    medications: List[str],
+    conditions: List[str],
+    functional_status: Optional[Dict[str, bool]] = None,
+    history_of_falls: bool = False,
+    use_of_assistive_device: bool = False,
+):
+    """
+    P3: Comprehensive falls risk assessment for older adults.
+    
+    Functional status can include: impaired_gait, impaired_balance, muscle_weakness
+    """
+    from app.geriatric.geriatric_support import get_geriatric_support
+    
+    support = get_geriatric_support()
+    result = await support.assess_falls_risk(
+        medications=medications,
+        conditions=conditions,
+        functional_status=functional_status,
+        history_of_falls=history_of_falls,
+        use_of_assistive_device=use_of_assistive_device,
+    )
+    
+    return result
+
+
+@app.post("/api/v1/geriatric/frailty", tags=["P3 - Geriatric"])
+async def assess_frailty(
+    fatigue: bool,
+    resistance_difficulty: bool,
+    ambulation_difficulty: bool,
+    illness_count: int,
+    weight_loss_percent: float,
+):
+    """
+    P3: Assess frailty using FRAIL scale.
+    
+    Returns frailty status: Robust (0), Pre-frail (1-2), Frail (3-5)
+    """
+    from app.geriatric.geriatric_support import get_geriatric_support
+    
+    support = get_geriatric_support()
+    result = await support.assess_frailty(
+        fatigue=fatigue,
+        resistance_difficulty=resistance_difficulty,
+        ambulation_difficulty=ambulation_difficulty,
+        illness_count=illness_count,
+        weight_loss_percent=weight_loss_percent,
+    )
+    
     return result
 
 

@@ -1931,6 +1931,717 @@ async def start_reembedding(
         }
 
 
+# =============================================================================
+# P2: CLINICAL GUIDELINE INTEGRATION ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/guidelines", tags=["P2 - Guidelines"])
+async def list_clinical_guidelines(
+    domain: Optional[str] = None,
+    source: Optional[str] = None,
+):
+    """
+    P2: List available clinical practice guidelines.
+    
+    Supports filtering by:
+    - domain: cardiovascular, oncology, infectious_disease, etc.
+    - source: AHA/ACC, ESC, NCCN, IDSA, etc.
+    """
+    from app.guidelines.clinical_guidelines import (
+        get_guideline_engine, ClinicalDomain, GuidelineSource
+    )
+    
+    engine = get_guideline_engine()
+    
+    domain_enum = None
+    if domain:
+        try:
+            domain_enum = ClinicalDomain(domain.lower())
+        except ValueError:
+            pass
+    
+    source_enum = None
+    if source:
+        try:
+            source_enum = GuidelineSource(source)
+        except ValueError:
+            pass
+    
+    guidelines = engine.list_guidelines(domain=domain_enum, source=source_enum)
+    
+    return {
+        "guidelines": [g.to_dict() for g in guidelines],
+        "total": len(guidelines),
+    }
+
+
+@app.get("/api/v1/guidelines/{guideline_id}", tags=["P2 - Guidelines"])
+async def get_clinical_guideline(guideline_id: str):
+    """P2: Get a specific clinical guideline by ID."""
+    from app.guidelines.clinical_guidelines import get_guideline_engine
+    
+    engine = get_guideline_engine()
+    guideline = engine.get_guideline_by_id(guideline_id)
+    
+    if guideline is None:
+        raise HTTPException(status_code=404, detail="Guideline not found")
+    
+    return guideline.to_dict()
+
+
+@app.post("/api/v1/guidelines/search", tags=["P2 - Guidelines"])
+async def search_clinical_guidelines(
+    query: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+    icd10_codes: Optional[List[str]] = None,
+    top_k: int = 5,
+):
+    """
+    P2: Search for relevant clinical guidelines.
+    
+    Returns guidelines with patient-specific applicability scores and
+    relevant recommendations.
+    """
+    from app.guidelines.clinical_guidelines import (
+        get_guideline_engine, ClinicalDomain
+    )
+    
+    engine = get_guideline_engine()
+    
+    results = engine.search_guidelines(
+        query=query,
+        patient_context=patient_context,
+        icd10_codes=icd10_codes,
+        top_k=top_k,
+    )
+    
+    return {
+        "query": query,
+        "results": [r.to_dict() for r in results],
+        "total": len(results),
+    }
+
+
+@app.post("/api/v1/guidelines/recommendations", tags=["P2 - Guidelines"])
+async def get_guideline_recommendations(
+    condition: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+):
+    """
+    P2: Get evidence-based recommendations for a specific condition.
+    
+    Returns recommendations from relevant guidelines with applicability scores.
+    """
+    from app.guidelines.clinical_guidelines import get_guideline_engine
+    
+    engine = get_guideline_engine()
+    recommendations = engine.get_recommendations_for_condition(
+        condition=condition,
+        patient_context=patient_context,
+    )
+    
+    return {
+        "condition": condition,
+        "recommendations": recommendations,
+        "total": len(recommendations),
+    }
+
+
+@app.post("/api/v1/guidelines/conflicts", tags=["P2 - Guidelines"])
+async def check_guideline_conflicts(
+    patient_context: Dict[str, Any],
+):
+    """
+    P2: Check for conflicts between applicable guidelines.
+    
+    Analyzes patient conditions and medications against guideline
+    recommendations to identify potential conflicts.
+    """
+    from app.guidelines.clinical_guidelines import get_guideline_engine
+    
+    engine = get_guideline_engine()
+    conflicts = engine.check_guideline_conflicts(patient_context)
+    
+    return {
+        "conflicts": conflicts,
+        "total": len(conflicts),
+    }
+
+
+@app.get("/api/v1/guidelines/stats", tags=["P2 - Guidelines"])
+async def get_guideline_stats():
+    """P2: Get clinical guideline engine statistics."""
+    from app.guidelines.clinical_guidelines import get_guideline_engine
+    
+    engine = get_guideline_engine()
+    return engine.get_stats()
+
+
+# =============================================================================
+# P2: UMLS/SNOMED TERMINOLOGY ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/terminology/lookup", tags=["P2 - Terminology"])
+async def lookup_medical_concept(
+    query: str,
+    system: Optional[str] = None,
+):
+    """
+    P2: Look up a medical concept by name or code.
+    
+    Supports lookup by:
+    - Concept name (e.g., "myocardial infarction")
+    - Synonym (e.g., "heart attack")
+    - Code with system (e.g., ICD10CM=I21.9)
+    
+    Returns UMLS concept with SNOMED CT, ICD-10, RxNorm, MeSH mappings.
+    """
+    from app.terminology.umls_snomed import (
+        get_terminology_engine, TerminologySystem
+    )
+    
+    engine = get_terminology_engine()
+    
+    system_enum = None
+    if system:
+        try:
+            system_enum = TerminologySystem(system.upper())
+        except ValueError:
+            pass
+    
+    concept = engine.lookup_concept(query, system_enum)
+    
+    if concept is None:
+        return {
+            "query": query,
+            "found": False,
+            "concept": None,
+        }
+    
+    return {
+        "query": query,
+        "found": True,
+        "concept": concept.to_dict(),
+    }
+
+
+@app.get("/api/v1/terminology/search", tags=["P2 - Terminology"])
+async def search_medical_concepts(
+    query: str,
+    semantic_type: Optional[str] = None,
+    top_k: int = 10,
+):
+    """
+    P2: Search for medical concepts matching a query.
+    
+    Optional filtering by semantic type:
+    - disease, symptom, drug, procedure, anatomy, lab_test
+    """
+    from app.terminology.umls_snomed import (
+        get_terminology_engine, SemanticType
+    )
+    
+    engine = get_terminology_engine()
+    
+    type_enum = None
+    if semantic_type:
+        type_map = {
+            "disease": SemanticType.DISEASE_SYNDROME,
+            "symptom": SemanticType.SIGN_SYMPTOM,
+            "drug": SemanticType.PHARMACOLOGIC_SUBSTANCE,
+            "procedure": SemanticType.THERAPEUTIC_PREVENTIVE_PROCEDURE,
+            "anatomy": SemanticType.BODY_PART_ORGAN_ORGAN_COMPONENT,
+            "lab_test": SemanticType.LABORATORY_PROCEDURE,
+        }
+        type_enum = type_map.get(semantic_type.lower())
+    
+    concepts = engine.search_concepts(query, type_enum, top_k)
+    
+    return {
+        "query": query,
+        "concepts": [c.to_dict() for c in concepts],
+        "total": len(concepts),
+    }
+
+
+@app.post("/api/v1/terminology/extract", tags=["P2 - Terminology"])
+async def extract_medical_entities_endpoint(
+    text: str,
+    semantic_types: Optional[List[str]] = None,
+):
+    """
+    P2: Extract medical entities from clinical text.
+    
+    Returns recognized entities with:
+    - Concept information (CUI, name, codes)
+    - Position in text
+    - Context snippet
+    - Confidence score
+    """
+    from app.terminology.umls_snomed import (
+        get_terminology_engine, SemanticType
+    )
+    
+    engine = get_terminology_engine()
+    
+    types_enums = None
+    if semantic_types:
+        type_map = {
+            "disease": SemanticType.DISEASE_SYNDROME,
+            "symptom": SemanticType.SIGN_SYMPTOM,
+            "drug": SemanticType.PHARMACOLOGIC_SUBSTANCE,
+            "procedure": SemanticType.THERAPEUTIC_PREVENTIVE_PROCEDURE,
+        }
+        types_enums = [type_map.get(t.lower()) for t in semantic_types if t.lower() in type_map]
+    
+    entities = engine.extract_entities(text, types_enums)
+    
+    return {
+        "text": text[:500] + "..." if len(text) > 500 else text,
+        "entities": [e.to_dict() for e in entities],
+        "total": len(entities),
+    }
+
+
+@app.get("/api/v1/terminology/map", tags=["P2 - Terminology"])
+async def map_medical_code(
+    source_system: str,
+    source_code: str,
+    target_system: str,
+):
+    """
+    P2: Map a code from one terminology system to another.
+    
+    Supported systems: SNOMEDCT, ICD10CM, ICD10PCS, RXNORM, MESH, LOINC
+    
+    Example: Map ICD10CM I21.9 to SNOMEDCT
+    """
+    from app.terminology.umls_snomed import (
+        get_terminology_engine, TerminologySystem
+    )
+    
+    engine = get_terminology_engine()
+    
+    try:
+        source_enum = TerminologySystem(source_system.upper())
+        target_enum = TerminologySystem(target_system.upper())
+    except ValueError as e:
+        return {
+            "error": f"Invalid terminology system: {str(e)}",
+            "valid_systems": [s.value for s in TerminologySystem],
+        }
+    
+    mapping = engine.map_code(source_enum, source_code, target_enum)
+    
+    if mapping is None:
+        return {
+            "found": False,
+            "source_system": source_system,
+            "source_code": source_code,
+            "target_system": target_system,
+        }
+    
+    return {
+        "found": True,
+        "mapping": mapping.to_dict(),
+    }
+
+
+@app.get("/api/v1/terminology/stats", tags=["P2 - Terminology"])
+async def get_terminology_stats():
+    """P2: Get terminology engine statistics."""
+    from app.terminology.umls_snomed import get_terminology_engine
+    
+    engine = get_terminology_engine()
+    return engine.get_stats()
+
+
+# =============================================================================
+# P2: KNOWLEDGE GRAPH ENDPOINTS
+# =============================================================================
+
+@app.get("/api/v1/knowledge-graph/node/{node_id}", tags=["P2 - Knowledge Graph"])
+async def get_knowledge_node(node_id: str):
+    """P2: Get a node from the knowledge graph by ID."""
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    node = kg.get_node(node_id)
+    
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    return node.to_dict()
+
+
+@app.get("/api/v1/knowledge-graph/search", tags=["P2 - Knowledge Graph"])
+async def search_knowledge_nodes(
+    query: str,
+    node_type: Optional[str] = None,
+    top_k: int = 10,
+):
+    """
+    P2: Search for nodes in the knowledge graph.
+    
+    Node types: disease, symptom, drug, procedure, anatomy, lab_test
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph, NodeType
+    
+    kg = get_knowledge_graph()
+    
+    type_enum = None
+    if node_type:
+        type_map = {
+            "disease": NodeType.DISEASE,
+            "symptom": NodeType.SYMPTOM,
+            "drug": NodeType.DRUG,
+            "procedure": NodeType.PROCEDURE,
+            "anatomy": NodeType.ANATOMY,
+            "lab_test": NodeType.LAB_TEST,
+        }
+        type_enum = type_map.get(node_type.lower())
+    
+    nodes = kg.search_nodes(query, [type_enum] if type_enum else None, top_k)
+    
+    return {
+        "query": query,
+        "nodes": [n.to_dict() for n in nodes],
+        "total": len(nodes),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/path", tags=["P2 - Knowledge Graph"])
+async def find_knowledge_path(
+    source: str,
+    target: str,
+    max_depth: int = 5,
+):
+    """
+    P2: Find the shortest path between two concepts in the knowledge graph.
+    
+    Useful for:
+    - Understanding disease-symptom relationships
+    - Discovering treatment pathways
+    - Finding connections between drugs and diseases
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    
+    # Try to find nodes by name if IDs don't work
+    source_node = kg.get_node(source) or kg.find_node_by_name(source)
+    target_node = kg.get_node(target) or kg.find_node_by_name(target)
+    
+    if source_node is None:
+        return {"error": f"Source node not found: {source}"}
+    if target_node is None:
+        return {"error": f"Target node not found: {target}"}
+    
+    path = kg.find_path(source_node.id, target_node.id, max_depth)
+    
+    if path is None:
+        return {
+            "found": False,
+            "source": source_node.name,
+            "target": target_node.name,
+            "message": "No path found within max depth",
+        }
+    
+    return {
+        "found": True,
+        "path": path.to_dict(),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/subgraph", tags=["P2 - Knowledge Graph"])
+async def extract_knowledge_subgraph(
+    center: str,
+    depth: int = 2,
+    node_types: Optional[str] = None,
+):
+    """
+    P2: Extract a subgraph centered on a concept.
+    
+    Returns all nodes and edges within specified depth of center node.
+    
+    Example: Get all diseases, symptoms, and treatments related to "diabetes"
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph, NodeType
+    
+    kg = get_knowledge_graph()
+    
+    # Find center node
+    center_node = kg.get_node(center) or kg.find_node_by_name(center)
+    
+    if center_node is None:
+        return {"error": f"Center node not found: {center}"}
+    
+    # Parse node types
+    type_enums = None
+    if node_types:
+        type_map = {
+            "disease": NodeType.DISEASE,
+            "symptom": NodeType.SYMPTOM,
+            "drug": NodeType.DRUG,
+            "procedure": NodeType.PROCEDURE,
+            "anatomy": NodeType.ANATOMY,
+        }
+        types = [t.strip() for t in node_types.split(",")]
+        type_enums = [type_map[t] for t in types if t in type_map]
+    
+    subgraph = kg.extract_subgraph(center_node.id, depth, type_enums)
+    
+    return subgraph.to_dict()
+
+
+@app.get("/api/v1/knowledge-graph/treatments/{disease}", tags=["P2 - Knowledge Graph"])
+async def get_disease_treatments(disease: str):
+    """
+    P2: Get all treatments for a disease from the knowledge graph.
+    
+    Returns drugs and procedures that treat or prevent the disease.
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    treatments = kg.get_treatments_for_disease(disease)
+    
+    return {
+        "disease": disease,
+        "treatments": [
+            {
+                "treatment": node.to_dict(),
+                "relationship": edge.to_dict(),
+            }
+            for node, edge in treatments
+        ],
+        "total": len(treatments),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/symptoms/{symptom}/diseases", tags=["P2 - Knowledge Graph"])
+async def get_diseases_by_symptom(symptom: str):
+    """
+    P2: Get all diseases that can cause a symptom.
+    
+    Useful for differential diagnosis.
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    diseases = kg.get_diseases_for_symptom(symptom)
+    
+    return {
+        "symptom": symptom,
+        "diseases": [
+            {
+                "disease": node.to_dict(),
+                "relationship": edge.to_dict(),
+            }
+            for node, edge in diseases
+        ],
+        "total": len(diseases),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/drug-interactions/{drug}", tags=["P2 - Knowledge Graph"])
+async def get_drug_interactions_kg(drug: str, drug2: Optional[str] = None):
+    """
+    P2: Get drug-drug interactions from the knowledge graph.
+    
+    Optionally filter by a second drug to check specific interaction.
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    interactions = kg.get_drug_interactions(drug)
+    
+    if drug2:
+        drug2_lower = drug2.lower()
+        interactions = [
+            (node, edge) for node, edge in interactions
+            if drug2_lower in node.name.lower()
+        ]
+    
+    return {
+        "drug": drug,
+        "interactions": [
+            {
+                "interacting_drug": node.to_dict(),
+                "interaction": edge.to_dict(),
+            }
+            for node, edge in interactions
+        ],
+        "total": len(interactions),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/comorbidities/{disease}", tags=["P2 - Knowledge Graph"])
+async def get_disease_comorbidities(disease: str):
+    """
+    P2: Get comorbidities and related diseases.
+    
+    Returns diseases that:
+    - Predispose to this disease
+    - Are caused by this disease
+    - Co-occur with this disease
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    comorbidities = kg.get_comorbidities(disease)
+    
+    return {
+        "disease": disease,
+        "comorbidities": [
+            {
+                "related_disease": node.to_dict(),
+                "relationship": edge.to_dict(),
+            }
+            for node, edge in comorbidities
+        ],
+        "total": len(comorbidities),
+    }
+
+
+@app.get("/api/v1/knowledge-graph/centrality", tags=["P2 - Knowledge Graph"])
+async def get_central_concepts(
+    node_type: Optional[str] = None,
+    top_k: int = 10,
+):
+    """
+    P2: Get the most central concepts in the knowledge graph.
+    
+    Centrality measures how connected a concept is - useful for
+    identifying key medical concepts.
+    """
+    from app.knowledge.knowledge_graph import get_knowledge_graph, NodeType
+    
+    kg = get_knowledge_graph()
+    
+    type_enum = None
+    if node_type:
+        type_map = {
+            "disease": NodeType.DISEASE,
+            "symptom": NodeType.SYMPTOM,
+            "drug": NodeType.DRUG,
+        }
+        type_enum = type_map.get(node_type.lower())
+    
+    central_nodes = kg.get_most_central_nodes(type_enum, top_k)
+    
+    return {
+        "node_type": node_type or "all",
+        "central_concepts": [
+            {
+                "node": node.to_dict(),
+                "centrality": round(score, 4),
+            }
+            for node, score in central_nodes
+        ],
+    }
+
+
+@app.get("/api/v1/knowledge-graph/stats", tags=["P2 - Knowledge Graph"])
+async def get_knowledge_graph_stats():
+    """P2: Get knowledge graph statistics."""
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    kg = get_knowledge_graph()
+    return kg.get_stats()
+
+
+# =============================================================================
+# P2: INTEGRATED CLINICAL DECISION SUPPORT
+# =============================================================================
+
+@app.post("/api/v1/clinical-support/comprehensive", tags=["P2 - Clinical Support"])
+async def comprehensive_clinical_support(
+    patient_context: Dict[str, Any],
+):
+    """
+    P2: Comprehensive clinical decision support.
+    
+    Integrates:
+    - Clinical guidelines search
+    - Terminology normalization
+    - Knowledge graph relationships
+    - Drug interaction checking
+    - Comorbidity analysis
+    
+    Returns unified clinical insights.
+    """
+    from app.guidelines.clinical_guidelines import get_guideline_engine
+    from app.terminology.umls_snomed import get_terminology_engine
+    from app.knowledge.knowledge_graph import get_knowledge_graph
+    
+    # Initialize engines
+    guideline_engine = get_guideline_engine()
+    terminology_engine = get_terminology_engine()
+    knowledge_graph = get_knowledge_graph()
+    
+    conditions = patient_context.get("conditions", [])
+    medications = patient_context.get("medications", [])
+    symptoms = patient_context.get("symptoms", [])
+    
+    result = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "patient_summary": {
+            "conditions": conditions,
+            "medications": medications,
+            "symptoms": symptoms,
+        },
+        "guidelines": [],
+        "terminology": [],
+        "knowledge_graph": {},
+        "recommendations": [],
+    }
+    
+    # 1. Search guidelines for each condition
+    for condition in conditions:
+        guideline_results = guideline_engine.search_guidelines(
+            query=condition,
+            patient_context=patient_context,
+            top_k=3,
+        )
+        for g in guideline_results:
+            result["guidelines"].append(g.to_dict())
+    
+    # 2. Normalize terminology for conditions and medications
+    for condition in conditions:
+        concept = terminology_engine.lookup_concept(condition)
+        if concept:
+            result["terminology"].append({
+                "term": condition,
+                "normalized": concept.to_dict(),
+            })
+    
+    # 3. Knowledge graph analysis
+    for condition in conditions:
+        treatments = knowledge_graph.get_treatments_for_disease(condition)
+        if treatments:
+            result["knowledge_graph"][condition] = {
+                "treatments": [node.name for node, _ in treatments[:5]],
+            }
+    
+    # 4. Drug interaction check
+    if len(medications) > 1:
+        interactions = []
+        for med in medications[:5]:
+            drug_interactions = knowledge_graph.get_drug_interactions(med)
+            for node, edge in drug_interactions:
+                if node.name in medications or node.name.lower() in [m.lower() for m in medications]:
+                    interactions.append({
+                        "drug1": med,
+                        "drug2": node.name,
+                        "confidence": edge.confidence,
+                    })
+        if interactions:
+            result["knowledge_graph"]["drug_interactions"] = interactions
+    
+    return result
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

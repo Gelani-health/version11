@@ -116,7 +116,7 @@ class HealthResponse(BaseModel):
 # ===== Application State =====
 
 class AppState:
-    ""Application state container."""
+    """Application state container."""
     retrieval_engine = None
     diagnostic_engine = None
     scheduler = None
@@ -1300,6 +1300,156 @@ async def assess_frailty(
     )
     
     return result
+
+
+# =============================================================================
+# P3: QUALITY ASSURANCE ENDPOINTS
+# =============================================================================
+
+class QualityValidationRequest(BaseModel):
+    """Request for quality validation."""
+    response_text: str = Field(..., description="AI-generated response to validate")
+    source_documents: List[Dict[str, Any]] = Field(default_factory=list, description="Source documents")
+    response_type: str = Field("diagnostic", description="Type of response")
+    patient_context: Optional[Dict[str, Any]] = Field(None, description="Optional patient context")
+
+
+@app.post("/api/v1/quality/validate", tags=["P3 - Quality"])
+async def validate_response_quality(
+    request: QualityValidationRequest,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P3: Validate quality of AI-generated clinical response.
+
+    Performs comprehensive validation including:
+    - Citation verification
+    - Faithfulness scoring
+    - Completeness checking
+    - Hallucination detection
+    - Clinical accuracy validation
+    """
+    from app.quality.response_validator import get_qa_engine
+
+    engine = get_qa_engine()
+    result = await engine.validate_response(
+        response_text=request.response_text,
+        source_documents=request.source_documents,
+        response_type=request.response_type,
+        patient_context=request.patient_context,
+    )
+
+    return result.to_dict()
+
+
+@app.get("/api/v1/quality/stats", tags=["P3 - Quality"])
+async def get_quality_stats():
+    """P3: Get quality assurance statistics."""
+    from app.quality.response_validator import get_qa_engine
+
+    engine = get_qa_engine()
+    return engine.get_stats()
+
+
+@app.post("/api/v1/quality/faithfulness", tags=["P3 - Quality"])
+async def calculate_faithfulness(
+    response_text: str,
+    source_documents: List[Dict[str, Any]],
+):
+    """
+    P3: Calculate faithfulness score for a response.
+
+    Measures how well the response is grounded in source documents.
+    """
+    from app.quality.response_validator import get_qa_engine
+
+    engine = get_qa_engine()
+    result = await engine._calculate_faithfulness(response_text, source_documents)
+
+    return result.to_dict()
+
+
+@app.post("/api/v1/quality/completeness", tags=["P3 - Quality"])
+async def check_completeness(
+    response_text: str,
+    response_type: str = "diagnostic",
+):
+    """
+    P3: Check completeness of clinical response.
+
+    Verifies all required clinical elements are present based on response type.
+    """
+    from app.quality.response_validator import get_qa_engine
+
+    engine = get_qa_engine()
+    result = engine._check_completeness(response_text, response_type)
+
+    return result.to_dict()
+
+
+# =============================================================================
+# P3: EMBEDDING OPTIMIZATION ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/embeddings/generate", tags=["P3 - Embeddings"])
+async def generate_embedding(
+    text: str,
+    use_cache: bool = True,
+):
+    """
+    P3: Generate optimized embedding for text.
+
+    Uses multi-level caching for performance.
+    """
+    from app.embedding.embedding_optimizer import get_embedding_optimizer
+
+    optimizer = get_embedding_optimizer()
+    result = await optimizer.embed(text, use_cache=use_cache)
+
+    return result.to_dict()
+
+
+@app.post("/api/v1/embeddings/batch", tags=["P3 - Embeddings"])
+async def generate_embeddings_batch(
+    texts: List[str],
+    use_cache: bool = True,
+    adaptive_batch: bool = True,
+):
+    """
+    P3: Generate embeddings for multiple texts with intelligent batching.
+    """
+    from app.embedding.embedding_optimizer import get_embedding_optimizer
+
+    optimizer = get_embedding_optimizer()
+    result = await optimizer.embed_batch(
+        texts=texts,
+        use_cache=use_cache,
+        adaptive_batch=adaptive_batch,
+    )
+
+    return result.to_dict()
+
+
+@app.get("/api/v1/embeddings/stats", tags=["P3 - Embeddings"])
+async def get_embedding_stats():
+    """P3: Get embedding optimizer statistics."""
+    from app.embedding.embedding_optimizer import get_embedding_optimizer
+
+    optimizer = get_embedding_optimizer()
+    return optimizer.get_stats()
+
+
+@app.delete("/api/v1/embeddings/cache", tags=["P3 - Embeddings"])
+async def clear_embedding_cache(
+    authenticated: bool = Depends(verify_api_key),
+):
+    """P3: Clear the embedding cache."""
+    from app.embedding.embedding_optimizer import get_embedding_optimizer
+
+    optimizer = get_embedding_optimizer()
+    await optimizer.clear_cache()
+
+    return {"status": "success", "message": "Embedding cache cleared"}
 
 
 # ===== Error Handlers =====

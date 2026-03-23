@@ -736,6 +736,127 @@ async def get_specialties():
     }
 
 
+# =============================================================================
+# P3: ENHANCED CROSS-PIPELINE SYNC ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/sync/bidirectional", tags=["P3 - Sync"])
+async def bidirectional_sync(
+    max_vectors: int = 1000,
+    conflict_strategy: str = "medical_wins",
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P3: Perform bidirectional sync between Medical RAG and LangChain RAG.
+
+    Conflict strategies: medical_wins, langchain_wins, newest_wins, keep_both, manual
+    """
+    from app.sync.enhanced_sync import get_enhanced_sync, ConflictStrategy
+
+    sync = get_enhanced_sync()
+
+    try:
+        strategy = ConflictStrategy(conflict_strategy)
+    except ValueError:
+        strategy = ConflictStrategy.MEDICAL_WINS
+
+    result = await sync.sync_bidirectional(
+        max_vectors=max_vectors,
+        conflict_strategy=strategy,
+    )
+
+    return result.to_dict()
+
+
+@app.post("/api/v1/sync/incremental", tags=["P3 - Sync"])
+async def incremental_sync(
+    since_hours: int = 24,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P3: Perform incremental sync based on changes since specified time.
+
+    Only processes vectors that have changed.
+    """
+    from app.sync.enhanced_sync import get_enhanced_sync
+    from datetime import datetime, timedelta
+
+    sync = get_enhanced_sync()
+    since = datetime.utcnow() - timedelta(hours=since_hours)
+
+    result = await sync.sync_incremental(since=since)
+
+    return result.to_dict()
+
+
+@app.get("/api/v1/sync/health", tags=["P3 - Sync"])
+async def get_sync_health():
+    """
+    P3: Get health status of cross-pipeline synchronization.
+
+    Returns sync health, divergence score, and pending conflicts.
+    """
+    from app.sync.enhanced_sync import get_enhanced_sync
+
+    sync = get_enhanced_sync()
+    result = await sync.check_health()
+
+    return result.to_dict()
+
+
+@app.get("/api/v1/sync/conflicts", tags=["P3 - Sync"])
+async def get_sync_conflicts():
+    """P3: Get all pending sync conflicts requiring manual resolution."""
+    from app.sync.enhanced_sync import get_enhanced_sync
+
+    sync = get_enhanced_sync()
+    conflicts = await sync.get_conflicts()
+
+    return {
+        "conflicts": [c.to_dict() for c in conflicts],
+        "total": len(conflicts),
+    }
+
+
+@app.post("/api/v1/sync/conflicts/resolve", tags=["P3 - Sync"])
+async def resolve_sync_conflict(
+    pmid: str,
+    chunk_index: int,
+    resolution: str,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P3: Manually resolve a sync conflict.
+
+    Resolution options: medical, langchain, keep_both
+    """
+    from app.sync.enhanced_sync import get_enhanced_sync
+
+    sync = get_enhanced_sync()
+    success = await sync.resolve_conflict(pmid, chunk_index, resolution)
+
+    return {
+        "success": success,
+        "pmid": pmid,
+        "chunk_index": chunk_index,
+        "resolution": resolution,
+    }
+
+
+@app.get("/api/v1/sync/history", tags=["P3 - Sync"])
+async def get_sync_history(limit: int = 10):
+    """P3: Get recent sync operation history."""
+    from app.sync.enhanced_sync import get_enhanced_sync
+
+    sync = get_enhanced_sync()
+    history = await sync.get_sync_history(limit=limit)
+
+    return {
+        "operations": [op.to_dict() for op in history],
+        "total": len(history),
+    }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

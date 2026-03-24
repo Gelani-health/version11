@@ -1,0 +1,5 @@
+#!/bin/sh
+# Caddy Service Finish Script
+
+echo "[s6-caddy] Shutting down Caddy reverse proxy..."
+caddy stop 2>/dev/null || true

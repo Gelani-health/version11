@@ -1,0 +1,158 @@
+# Gelani Healthcare Platform - Unified Dockerfile with s6-overlay
+# Single container with all services managed by s6-overlay
+# Provides: proper PID 1, zombie reaping, automatic restart, dependency ordering, graceful shutdown
+
+# ============================================
+# Stage 1: Dependencies (Node.js)
+# ============================================
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+# Install dependencies for native modules
+RUN apk add --no-cache libc6-compat python3 py3-pip
+
+# Copy package files
+COPY package.json bun.lock* package-lock.json* ./
+COPY prisma ./prisma/
+
+# Install dependencies using npm (more compatible)
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# ============================================
+# Stage 2: Python Dependencies
+# ============================================
+FROM python:3.12-slim AS python-deps
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python requirements
+COPY mini-services/medical-rag-service/requirements.txt ./medical-rag-requirements.txt
+COPY mini-services/langchain-rag-service/requirements.txt ./langchain-rag-requirements.txt
+COPY mini-services/medasr-service/requirements.txt ./medasr-requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r medical-rag-requirements.txt && \
+    pip install --no-cache-dir -r langchain-rag-requirements.txt && \
+    pip install --no-cache-dir -r medasr-requirements.txt
+
+# ============================================
+# Stage 3: Builder
+# ============================================
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Set environment variables for build
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+ENV SKIP_ENV_VALIDATION=1
+
+# Build the application
+RUN npm run build
+
+# ============================================
+# Stage 4: Runner (Production with s6-overlay)
+# ============================================
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    curl \
+    wget \
+    caddy \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Install s6-overlay
+ARG S6_OVERLAY_VERSION=3.1.6.2
+ARG TARGETARCH=amd64
+RUN if [ "$(uname -m)" = "aarch64" ]; then TARGETARCH=aarch64; fi && \
+    wget -q -O /tmp/s6-overlay.tar.gz \
+    "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.gz" && \
+    tar -xzf /tmp/s6-overlay.tar.gz -C / && \
+    rm /tmp/s6-overlay.tar.gz && \
+    wget -q -O /tmp/s6-overlay-arch.tar.gz \
+    "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${TARGETARCH}.tar.gz" && \
+    tar -xzf /tmp/s6-overlay-arch.tar.gz -C / && \
+    rm /tmp/s6-overlay-arch.tar.gz
+
+# Copy Python dependencies from python-deps stage
+COPY --from=python-deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=python-deps /usr/local/bin /usr/local/bin
+
+# Copy Node.js application
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/db ./db
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy mini-services
+COPY --from=builder /app/mini-services ./mini-services
+
+# Copy s6-overlay service definitions
+COPY s6-overlay/s6-rc.d /etc/s6-overlay/s6-rc.d
+
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs && \
+    mkdir -p /app/data /app/logs /run/service && \
+    chown -R nextjs:nodejs /app
+
+# Create Caddyfile if not exists
+RUN echo -e "# Gelani Healthcare Caddyfile\n:80 {\n    reverse_proxy localhost:3000\n}\n\n:443 {\n    reverse_proxy localhost:3000\n}" > /app/Caddyfile
+
+# Set correct permissions for s6-overlay scripts
+RUN chmod +x /etc/s6-overlay/s6-rc.d/*/run 2>/dev/null || true && \
+    chmod +x /etc/s6-overlay/s6-rc.d/*/finish 2>/dev/null || true && \
+    chmod +x /etc/s6-overlay/s6-rc.d/*/up 2>/dev/null || true
+
+# Environment defaults
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+ENV PYTHONUNBUFFERED=1
+
+# Expose ports
+# 3000 - Next.js application
+# 3031 - Medical RAG service
+# 3032 - LangChain RAG service
+# 3033 - MedASR service
+# 80/443 - Caddy reverse proxy
+EXPOSE 3000 3031 3032 3033 80 443
+
+# Health check for the main application
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+# Labels for container metadata
+LABEL org.opencontainers.image.title="Gelani Healthcare Platform"
+LABEL org.opencontainers.image.description="AI-Powered Clinical Decision Support System with s6-overlay process management"
+LABEL org.opencontainers.image.vendor="Gelani Health"
+LABEL org.opencontainers.image.version="2.0.0"
+LABEL org.opencontainers.image.source="https://github.com/Gelani-health/version11"
+
+# s6-overlay entrypoint
+ENTRYPOINT ["/init"]
+
+# Default command (s6-overlay handles service startup)
+CMD []

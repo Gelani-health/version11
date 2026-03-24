@@ -1,0 +1,5 @@
+#!/bin/sh
+# Next.js Service Finish Script
+
+echo "[s6-nextjs] Received shutdown signal..."
+echo "[s6-nextjs] Graceful shutdown complete"

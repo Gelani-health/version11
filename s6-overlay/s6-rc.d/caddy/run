@@ -1,0 +1,32 @@
+#!/bin/sh
+# Caddy Reverse Proxy Service
+# Ports: 80, 443
+# Dependencies: nextjs
+
+echo "[s6-caddy] Starting Caddy reverse proxy..."
+
+# Wait for Next.js to be ready
+echo "[s6-caddy] Waiting for Next.js to be ready..."
+for i in $(seq 1 60); do
+    if curl -s http://localhost:3000/api/health > /dev/null 2>&1; then
+        echo "[s6-caddy] ✅ Next.js is ready"
+        break
+    fi
+    if [ $i -eq 60 ]; then
+        echo "[s6-caddy] ⚠️ Next.js not ready after 60s, starting anyway"
+    fi
+    sleep 1
+done
+
+# Check for Caddyfile locations
+if [ -f "/etc/caddy/Caddyfile" ]; then
+    echo "[s6-caddy] Using Caddyfile from /etc/caddy/Caddyfile"
+    exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+elif [ -f "/app/Caddyfile" ]; then
+    echo "[s6-caddy] Using Caddyfile from /app/Caddyfile"
+    exec caddy run --config /app/Caddyfile --adapter caddyfile
+else
+    # Simple proxy mode - forward 80 to Next.js
+    echo "[s6-caddy] Running in simple proxy mode"
+    exec caddy reverse-proxy --from :80 --to localhost:3000
+fi

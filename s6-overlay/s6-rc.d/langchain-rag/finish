@@ -1,0 +1,4 @@
+#!/bin/sh
+# LangChain RAG Service Finish Script
+
+echo "[s6-langchain-rag] Shutting down LangChain RAG service..."

@@ -1,0 +1,4 @@
+#!/bin/sh
+# MedASR Service Finish Script
+
+echo "[s6-medasr] Shutting down MedASR service..."

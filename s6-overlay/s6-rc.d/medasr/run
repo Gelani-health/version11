@@ -1,0 +1,21 @@
+#!/bin/sh
+# MedASR Service - Medical Speech Recognition
+# Port: 3033
+# Dependencies: init-first only (standalone service)
+
+echo "[s6-medasr] Starting MedASR speech recognition service..."
+
+cd /app/mini-services/medasr-service
+
+# Set environment
+export PORT="${MEDASR_PORT:-3033}"
+export HF_TOKEN="${HF_TOKEN:-}"
+export MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/app/models}"
+
+# Check if dependencies are ready
+if [ -f "/run/s6/basedir/env/SERVICE_READY" ]; then
+    echo "[s6-medasr] ✅ Init complete, starting service"
+fi
+
+echo "[s6-medasr] Starting uvicorn on port ${PORT}..."
+exec uvicorn index:app --host 0.0.0.0 --port ${PORT} --workers 1

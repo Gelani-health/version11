@@ -1,0 +1,136 @@
+# Gelani Healthcare Platform - Docker Compose with s6-overlay
+# Unified container with all services managed by s6-overlay
+#
+# Services included in single container:
+# - Next.js Application (port 3000)
+# - Medical RAG Service (port 3031)
+# - LangChain RAG Service (port 3032)
+# - MedASR Service (port 3033)
+# - Caddy Reverse Proxy (ports 80, 443)
+#
+# Usage:
+#   Build: docker compose -f docker-compose.s6.yml build
+#   Start: docker compose -f docker-compose.s6.yml up -d
+#   Logs:  docker compose -f docker-compose.s6.yml logs -f
+
+services:
+  # ============================================
+  # Gelani Unified Container (s6-overlay)
+  # ============================================
+  gelani-unified:
+    build:
+      context: .
+      dockerfile: Dockerfile.s6
+    container_name: gelani-unified
+    ports:
+      # Main application
+      - "3000:3000"
+      # AI Services
+      - "3031:3031"  # Medical RAG
+      - "3032:3032"  # LangChain RAG
+      - "3033:3033"  # MedASR
+      # Reverse Proxy
+      - "80:80"
+      - "443:443"
+    environment:
+      # Node.js Configuration
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      
+      # Database Configuration
+      - DATABASE_URL=file:/app/data/healthcare.db
+      
+      # AI Service Ports (internal)
+      - MEDICAL_RAG_PORT=3031
+      - LANGCHAIN_RAG_PORT=3032
+      - MEDASR_PORT=3033
+      
+      # API Keys (required)
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-gelani-healthcare-secret-key-change-in-production}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - ZAI_API_KEY=${ZAI_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-medical-diagnostic-rag}
+      - PINECONE_NAMESPACE=${PINECONE_NAMESPACE:-pubmed}
+      
+      # Optional API Keys
+      - NCBI_API_KEY=${NCBI_API_KEY}
+      - NCBI_EMAIL=${NCBI_EMAIL:-info@gelani-health.ai}
+      - HF_TOKEN=${HF_TOKEN}
+      - GELANI_API_KEY=${GELANI_API_KEY}
+      
+      # GLM Model Configuration
+      - GLM_MODEL=${GLM_MODEL:-glm-4.7-flash}
+      
+      # s6-overlay Configuration
+      - S6_KEEP_ENV=1
+      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
+      
+    volumes:
+      # Persistent data
+      - gelani-data:/app/data
+      - gelani-logs:/app/logs
+      # Model caches (optional, speeds up restarts)
+      - medical-rag-models:/app/models
+      - medasr-models:/app/.cache
+      # Optional: Custom Caddyfile
+      # - ./Caddyfile:/app/Caddyfile:ro
+    
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    restart: unless-stopped
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Cloudflare Tunnel (Optional - Public Preview)
+  # ============================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gelani-tunnel
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      gelani-unified:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  default:
+    name: gelani-network
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  gelani-data:
+    driver: local
+  gelani-logs:
+    driver: local
+  medical-rag-models:
+    driver: local
+  medasr-models:
+    driver: local

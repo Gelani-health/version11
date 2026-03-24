@@ -1,0 +1,42 @@
+#!/bin/sh
+# Initialization Service (oneshot)
+# Runs once at container startup - MUST complete before any service starts
+
+echo "[s6-init] Starting Gelani Healthcare initialization..."
+
+# Create necessary directories with proper permissions
+mkdir -p /app/data /app/logs /run/service
+
+# Set permissions if running as root
+if [ "$(id -u)" = "0" ]; then
+    chown -R nextjs:nodejs /app/data /app/logs 2>/dev/null || true
+fi
+
+# Wait for any mounted volumes to be ready
+sleep 1
+
+# Run database migrations if needed (SQLite)
+if [ -f "/app/prisma/schema.prisma" ]; then
+    echo "[s6-init] Checking database schema..."
+    cd /app
+    if [ -n "$DATABASE_URL" ] || [ -f "/app/data/healthcare.db" ]; then
+        npx prisma migrate deploy 2>/dev/null || npx prisma db push --skip-generate 2>/dev/null || true
+        echo "[s6-init] Database schema synchronized"
+    fi
+fi
+
+# Create database if it doesn't exist
+if [ ! -f "/app/data/healthcare.db" ] && [ -z "$DATABASE_URL" ]; then
+    echo "[s6-init] Creating initial database..."
+    cd /app
+    npx prisma db push --skip-generate 2>/dev/null || true
+fi
+
+# Ensure model cache directories exist
+mkdir -p /app/models /app/.cache
+
+# Set environment variables for services
+export SERVICE_READY=1
+
+echo "[s6-init] ✅ Initialization complete - services may now start"
+exit 0

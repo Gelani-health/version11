@@ -1,0 +1,69 @@
+#!/bin/sh
+# Next.js Application - Main Healthcare Application
+# Port: 3000
+# Dependencies: medasr, medical-rag, langchain-rag (all backend services)
+
+echo "[s6-nextjs] Starting Next.js healthcare application..."
+
+# Wait for all backend services to be ready
+echo "[s6-nextjs] Waiting for backend services..."
+
+# Wait for Medical RAG
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3031/health > /dev/null 2>&1; then
+        echo "[s6-nextjs] ✅ Medical RAG ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "[s6-nextjs] ⚠️ Medical RAG not ready, continuing..."
+    fi
+    sleep 1
+done
+
+# Wait for LangChain RAG
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3032/health > /dev/null 2>&1; then
+        echo "[s6-nextjs] ✅ LangChain RAG ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "[s6-nextjs] ⚠️ LangChain RAG not ready, continuing..."
+    fi
+    sleep 1
+done
+
+# Wait for MedASR
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3033/health > /dev/null 2>&1; then
+        echo "[s6-nextjs] ✅ MedASR ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "[s6-nextjs] ⚠️ MedASR not ready, continuing..."
+    fi
+    sleep 1
+done
+
+echo "[s6-nextjs] All backend services checked, starting Next.js..."
+
+cd /app
+
+# Set default environment
+export NODE_ENV="${NODE_ENV:-production}"
+export PORT="${PORT:-3000}"
+export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+export MEDICAL_RAG_SERVICE_URL="${MEDICAL_RAG_SERVICE_URL:-http://localhost:3031}"
+export LANGCHAIN_RAG_SERVICE_URL="${LANGCHAIN_RAG_SERVICE_URL:-http://localhost:3032}"
+export MEDASR_SERVICE_URL="${MEDASR_SERVICE_URL:-http://localhost:3033}"
+
+# Check for standalone build
+if [ -f ".next/standalone/server.js" ]; then
+    echo "[s6-nextjs] Running in production mode (standalone)"
+    exec node .next/standalone/server.js
+elif [ -f "dist/server.js" ]; then
+    echo "[s6-nextjs] Running from dist/"
+    exec node dist/server.js
+else
+    echo "[s6-nextjs] Running in development mode"
+    exec npm run dev
+fi

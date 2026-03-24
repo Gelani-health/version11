@@ -1,0 +1,4 @@
+#!/bin/sh
+# Medical RAG Service Finish Script
+
+echo "[s6-medical-rag] Shutting down Medical RAG service..."

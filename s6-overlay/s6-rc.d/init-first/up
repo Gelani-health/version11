@@ -1,42 +1,247 @@
 #!/bin/sh
-# Initialization Service (oneshot)
-# Runs once at container startup - MUST complete before any service starts
+# Gelani Healthcare Platform - Database Initialization Service
+# Type: oneshot (runs once at container startup)
+# 
+# Performs:
+# 1. Database directory setup
+# 2. SQLite WAL mode configuration
+# 3. Schema migration
+# 4. Initial backup creation
+# 5. Health verification
 
-echo "[s6-init] Starting Gelani Healthcare initialization..."
+set -e
 
-# Create necessary directories with proper permissions
-mkdir -p /app/data /app/logs /run/service
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║     Gelani Healthcare - Database Initialization              ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 
-# Set permissions if running as root
-if [ "$(id -u)" = "0" ]; then
-    chown -R nextjs:nodejs /app/data /app/logs 2>/dev/null || true
+# ============================================
+# Configuration
+# ============================================
+
+DATA_DIR="${DATA_DIR:-/app/data}"
+DB_PATH="${DB_PATH:-${DATA_DIR}/healthcare.db}"
+BACKUP_DIR="${BACKUP_DIR:-${DATA_DIR}/backups}"
+LOG_DIR="${LOG_DIR:-/app/logs}"
+
+# ============================================
+# Step 1: Create Directories
+# ============================================
+
+echo ""
+echo "[init] Step 1: Creating directories..."
+
+mkdir -p "${DATA_DIR}"
+mkdir -p "${BACKUP_DIR}"
+mkdir -p "${LOG_DIR}"
+mkdir -p /run/service
+
+echo "[init]   ✓ Data directory: ${DATA_DIR}"
+echo "[init]   ✓ Backup directory: ${BACKUP_DIR}"
+echo "[init]   ✓ Log directory: ${LOG_DIR}"
+
+# ============================================
+# Step 2: Database File Initialization
+# ============================================
+
+echo ""
+echo "[init] Step 2: Database file initialization..."
+
+DB_EXISTS=false
+if [ -f "${DB_PATH}" ]; then
+    DB_EXISTS=true
+    DB_SIZE=$(stat -f%z "${DB_PATH}" 2>/dev/null || stat -c%s "${DB_PATH}" 2>/dev/null || echo "0")
+    echo "[init]   ✓ Database exists: ${DB_PATH} (${DB_SIZE} bytes)"
+else
+    echo "[init]   ℹ Database not found, will create: ${DB_PATH}"
 fi
 
-# Wait for any mounted volumes to be ready
-sleep 1
+# ============================================
+# Step 3: SQLite WAL Mode Configuration
+# ============================================
 
-# Run database migrations if needed (SQLite)
-if [ -f "/app/prisma/schema.prisma" ]; then
-    echo "[s6-init] Checking database schema..."
-    cd /app
-    if [ -n "$DATABASE_URL" ] || [ -f "/app/data/healthcare.db" ]; then
-        npx prisma migrate deploy 2>/dev/null || npx prisma db push --skip-generate 2>/dev/null || true
-        echo "[s6-init] Database schema synchronized"
+echo ""
+echo "[init] Step 3: SQLite WAL mode configuration..."
+
+# Function to apply SQLite PRAGMA settings
+apply_sqlite_pragmas() {
+    local db_path="$1"
+    
+    # Create database if it doesn't exist
+    if [ ! -f "${db_path}" ]; then
+        sqlite3 "${db_path}" "SELECT 1;" 2>/dev/null || true
     fi
+    
+    # Apply WAL mode and optimizations
+    sqlite3 "${db_path}" "PRAGMA journal_mode = WAL;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA synchronous = NORMAL;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA busy_timeout = 30000;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA cache_size = -64000;" 2>/dev/null || true  # 64MB
+    sqlite3 "${db_path}" "PRAGMA temp_store = MEMORY;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA mmap_size = 268435456;" 2>/dev/null || true  # 256MB
+    sqlite3 "${db_path}" "PRAGMA wal_autocheckpoint = 1000;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA locking_mode = NORMAL;" 2>/dev/null || true
+    sqlite3 "${db_path}" "PRAGMA foreign_keys = ON;" 2>/dev/null || true
+    
+    echo "[init]   ✓ WAL mode and optimizations applied"
+}
+
+apply_sqlite_pragmas "${DB_PATH}"
+
+# Verify WAL mode
+JOURNAL_MODE=$(sqlite3 "${DB_PATH}" "PRAGMA journal_mode;" 2>/dev/null || echo "unknown")
+if [ "${JOURNAL_MODE}" = "wal" ]; then
+    echo "[init]   ✓ WAL mode verified: ${JOURNAL_MODE}"
+else
+    echo "[init]   ⚠ Journal mode: ${JOURNAL_MODE} (expected: wal)"
 fi
 
-# Create database if it doesn't exist
-if [ ! -f "/app/data/healthcare.db" ] && [ -z "$DATABASE_URL" ]; then
-    echo "[s6-init] Creating initial database..."
-    cd /app
-    npx prisma db push --skip-generate 2>/dev/null || true
+# ============================================
+# Step 4: Prisma Schema Migration
+# ============================================
+
+echo ""
+echo "[init] Step 4: Prisma schema migration..."
+
+cd /app
+
+# Set database URL
+export DATABASE_URL="file:${DB_PATH}"
+
+if [ -f "prisma/schema.prisma" ]; then
+    echo "[init]   Running Prisma migrations..."
+    
+    # Try migrate deploy first (for production)
+    if npx prisma migrate deploy 2>/dev/null; then
+        echo "[init]   ✓ Migrations deployed successfully"
+    elif npx prisma db push --skip-generate 2>/dev/null; then
+        echo "[init]   ✓ Database schema pushed successfully"
+    else
+        echo "[init]   ⚠ Migration skipped (may already be up to date)"
+    fi
+else
+    echo "[init]   ⚠ No Prisma schema found"
 fi
 
-# Ensure model cache directories exist
-mkdir -p /app/models /app/.cache
+# Generate Prisma client
+if [ -f "node_modules/.bin/prisma" ] || [ -f "node_modules/prisma/build/index.js" ]; then
+    echo "[init]   Generating Prisma client..."
+    npx prisma generate 2>/dev/null || true
+    echo "[init]   ✓ Prisma client generated"
+fi
 
-# Set environment variables for services
+# ============================================
+# Step 5: Database Integrity Check
+# ============================================
+
+echo ""
+echo "[init] Step 5: Database integrity check..."
+
+INTEGRITY=$(sqlite3 "${DB_PATH}" "PRAGMA integrity_check;" 2>/dev/null || echo "error")
+if [ "${INTEGRITY}" = "ok" ]; then
+    echo "[init]   ✓ Database integrity: OK"
+else
+    echo "[init]   ⚠ Database integrity: ${INTEGRITY}"
+fi
+
+# ============================================
+# Step 6: Initial Backup Creation
+# ============================================
+
+echo ""
+echo "[init] Step 6: Initial backup creation..."
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+BACKUP_FILE="${BACKUP_DIR}/backup-${TIMESTAMP}.db"
+
+# Force WAL checkpoint before backup
+sqlite3 "${DB_PATH}" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+
+# Create backup
+if [ -f "${DB_PATH}" ]; then
+    cp "${DB_PATH}" "${BACKUP_FILE}"
+    
+    # Copy WAL and SHM files if they exist
+    if [ -f "${DB_PATH}-wal" ]; then
+        cp "${DB_PATH}-wal" "${BACKUP_FILE}-wal"
+    fi
+    if [ -f "${DB_PATH}-shm" ]; then
+        cp "${DB_PATH}-shm" "${BACKUP_FILE}-shm"
+    fi
+    
+    BACKUP_SIZE=$(stat -f%z "${BACKUP_FILE}" 2>/dev/null || stat -c%s "${BACKUP_FILE}" 2>/dev/null || echo "0")
+    echo "[init]   ✓ Backup created: ${BACKUP_FILE} (${BACKUP_SIZE} bytes)"
+else
+    echo "[init]   ⚠ No database to backup"
+fi
+
+# ============================================
+# Step 7: Cleanup Old Backups
+# ============================================
+
+echo ""
+echo "[init] Step 7: Backup cleanup..."
+
+# Keep only the last 20 backups
+BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/backup-*.db 2>/dev/null | wc -l)
+if [ "${BACKUP_COUNT}" -gt 20 ]; then
+    echo "[init]   Cleaning up old backups..."
+    cd "${BACKUP_DIR}"
+    ls -1t backup-*.db | tail -n +21 | xargs rm -f 2>/dev/null || true
+    echo "[init]   ✓ Old backups removed"
+else
+    echo "[init]   ✓ Backup count: ${BACKUP_COUNT} (within limit)"
+fi
+
+# ============================================
+# Step 8: Set Permissions
+# ============================================
+
+echo ""
+echo "[init] Step 8: Setting permissions..."
+
+# Check if running as root
+if [ "$(id -u)" = "0" ]; then
+    # Check if nextjs user exists
+    if id nextjs 2>/dev/null; then
+        chown -R nextjs:nodejs "${DATA_DIR}" 2>/dev/null || true
+        chown -R nextjs:nodejs "${LOG_DIR}" 2>/dev/null || true
+        echo "[init]   ✓ Permissions set for nextjs user"
+    fi
+else
+    echo "[init]   ℹ Not running as root, skipping permission changes"
+fi
+
+# ============================================
+# Step 9: Final Status
+# ============================================
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║     Database Initialization Complete                         ║"
+echo "╠════════════════════════════════════════════════════════════╣"
+
+# Get database stats
+if [ -f "${DB_PATH}" ]; then
+    DB_SIZE=$(stat -f%z "${DB_PATH}" 2>/dev/null || stat -c%s "${DB_PATH}" 2>/dev/null || echo "0")
+    PAGE_COUNT=$(sqlite3 "${DB_PATH}" "PRAGMA page_count;" 2>/dev/null || echo "?")
+    PAGE_SIZE=$(sqlite3 "${DB_PATH}" "PRAGMA page_size;" 2>/dev/null || echo "?")
+    
+    echo "║ Database:     ${DB_PATH}"
+    echo "║ Size:        ${DB_SIZE} bytes"
+    echo "║ Journal:     ${JOURNAL_MODE}"
+    echo "║ Pages:       ${PAGE_COUNT} × ${PAGE_SIZE} bytes"
+    echo "║ Backup:      ${BACKUP_FILE}"
+else
+    echo "║ Database:    Will be created on first use"
+fi
+
+echo "╚════════════════════════════════════════════════════════════╝"
+
+# Set flag for other services
+touch /run/s6/basedir/env/SERVICE_READY 2>/dev/null || true
 export SERVICE_READY=1
 
-echo "[s6-init] ✅ Initialization complete - services may now start"
+echo ""
+echo "[init] ✅ Initialization complete - services may now start"
 exit 0

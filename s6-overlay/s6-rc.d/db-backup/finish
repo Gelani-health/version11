@@ -1,0 +1,4 @@
+#!/bin/sh
+# Database Backup Service Finish Script
+
+echo "[db-backup] Shutting down backup service..."

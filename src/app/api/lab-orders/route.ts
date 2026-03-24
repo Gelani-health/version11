@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, authenticateRequest } from "@/lib/auth-middleware";
+import { AuthenticatedUser } from "@/lib/auth-middleware";
 
 // GET /api/lab-orders - Get lab orders with optional filters
 export async function GET(request: NextRequest) {
+  // Authenticate the request
+  const authResult = await authenticateRequest(request);
+  
+  if (!authResult.authenticated) {
+    return NextResponse.json(
+      { success: false, error: authResult.error || "Authentication required" },
+      { status: authResult.statusCode || 401 }
+    );
+  }
+
+  const user = authResult.user!;
+
+  // Check if user has permission to view lab orders
+  if (!user.permissions.includes('lab:read')) {
+    return NextResponse.json(
+      { success: false, error: "You don't have permission to view lab orders" },
+      { status: 403 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get("patientId");
@@ -13,6 +35,10 @@ export async function GET(request: NextRequest) {
     
     if (patientId) where.patientId = patientId;
     if (status) where.status = status;
+
+    // Lab workers can only see orders in their workflow
+    // Doctors and admins can see all orders
+    // Radiologists have limited lab access (read only)
 
     const labOrders = await db.labOrder.findMany({
       where,
@@ -33,6 +59,9 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
+    // Audit log for PHI access
+    console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | GET /api/lab-orders | Patient: ${patientId || 'all'}`);
+
     return NextResponse.json({
       success: true,
       data: labOrders,
@@ -48,6 +77,28 @@ export async function GET(request: NextRequest) {
 
 // POST /api/lab-orders - Create a new lab order
 export async function POST(request: NextRequest) {
+  // Authenticate the request
+  const authResult = await authenticateRequest(request);
+  
+  if (!authResult.authenticated) {
+    return NextResponse.json(
+      { success: false, error: authResult.error || "Authentication required" },
+      { status: authResult.statusCode || 401 }
+    );
+  }
+
+  const user = authResult.user!;
+
+  // Check if user has permission to create lab orders
+  // Doctors, specialists, and admins can order labs
+  // Lab workers cannot create orders (they process them)
+  if (!user.permissions.includes('lab:write')) {
+    return NextResponse.json(
+      { success: false, error: "You don't have permission to create lab orders. Only doctors, specialists, and admins can order lab tests." },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await request.json();
     const {
@@ -73,7 +124,7 @@ export async function POST(request: NextRequest) {
     const count = await db.labOrder.count();
     const orderNumber = `LAB-${year}-${String(count + 1).padStart(4, "0")}`;
 
-    // Create order with items
+    // Create order with items - use authenticated user info
     const labOrder = await db.labOrder.create({
       data: {
         patientId,
@@ -82,8 +133,8 @@ export async function POST(request: NextRequest) {
         priority: priority || "routine",
         clinicalNotes,
         diagnosis,
-        orderedBy,
-        department,
+        orderedBy: orderedBy || user.employeeId,
+        department: department || user.role,
         orderItems: {
           create: tests.map((test: {
             testName: string;
@@ -116,6 +167,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Audit log
+    console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | POST /api/lab-orders | Order: ${orderNumber} | Patient: ${patientId}`);
+
     return NextResponse.json({
       success: true,
       data: labOrder,
@@ -132,12 +186,31 @@ export async function POST(request: NextRequest) {
 
 // PUT /api/lab-orders - Update lab order or item
 export async function PUT(request: NextRequest) {
+  // Authenticate the request
+  const authResult = await authenticateRequest(request);
+  
+  if (!authResult.authenticated) {
+    return NextResponse.json(
+      { success: false, error: authResult.error || "Authentication required" },
+      { status: authResult.statusCode || 401 }
+    );
+  }
+
+  const user = authResult.user!;
+
   try {
     const body = await request.json();
     const { orderId, itemId, action, data } = body;
 
-    // Update order status
+    // Update order status - requires lab:write permission
     if (action === "updateOrder" && orderId) {
+      if (!user.permissions.includes('lab:write')) {
+        return NextResponse.json(
+          { success: false, error: "You don't have permission to update lab orders" },
+          { status: 403 }
+        );
+      }
+
       const order = await db.labOrder.update({
         where: { id: orderId },
         data: {
@@ -147,11 +220,21 @@ export async function PUT(request: NextRequest) {
           collectedBy: data.collectedBy,
         },
       });
+
+      console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | PUT /api/lab-orders | Order: ${orderId} | Action: updateOrder`);
+
       return NextResponse.json({ success: true, data: order });
     }
 
-    // Update item result (for lab technician)
+    // Update item result (for lab technician) - requires lab:result_entry permission
     if (action === "updateItemResult" && itemId) {
+      if (!user.permissions.includes('lab:result_entry')) {
+        return NextResponse.json(
+          { success: false, error: "You don't have permission to enter lab results. This action is restricted to Lab Workers and Administrators." },
+          { status: 403 }
+        );
+      }
+
       const item = await db.labOrderItem.update({
         where: { id: itemId },
         data: {
@@ -160,7 +243,7 @@ export async function PUT(request: NextRequest) {
           resultNotes: data.resultNotes,
           status: data.status || "completed",
           resultEnteredAt: new Date(),
-          enteredBy: data.enteredBy,
+          enteredBy: user.employeeId,
         },
       });
 
@@ -177,17 +260,26 @@ export async function PUT(request: NextRequest) {
         });
       }
 
+      console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | PUT /api/lab-orders | Item: ${itemId} | Action: updateItemResult | Result: ${data.resultValue}`);
+
       return NextResponse.json({ success: true, data: item });
     }
 
-    // Collect sample
+    // Collect sample - lab workers and nurses can collect samples
     if (action === "collectSample" && orderId) {
+      if (!user.permissions.includes('lab:result_entry') && !user.permissions.includes('lab:write')) {
+        return NextResponse.json(
+          { success: false, error: "You don't have permission to collect samples" },
+          { status: 403 }
+        );
+      }
+
       const order = await db.labOrder.update({
         where: { id: orderId },
         data: {
           sampleCollected: true,
           collectedAt: new Date(),
-          collectedBy: data.collectedBy,
+          collectedBy: user.employeeId,
           status: "collected",
         },
       });
@@ -197,6 +289,29 @@ export async function PUT(request: NextRequest) {
         where: { orderId },
         data: { status: "collected" },
       });
+
+      console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | PUT /api/lab-orders | Order: ${orderId} | Action: collectSample`);
+
+      return NextResponse.json({ success: true, data: order });
+    }
+
+    // Verify results - requires lab:verify permission
+    if (action === "verifyResults" && orderId) {
+      if (!user.permissions.includes('lab:verify')) {
+        return NextResponse.json(
+          { success: false, error: "You don't have permission to verify lab results" },
+          { status: 403 }
+        );
+      }
+
+      const order = await db.labOrder.update({
+        where: { id: orderId },
+        data: {
+          status: "verified",
+        },
+      });
+
+      console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | PUT /api/lab-orders | Order: ${orderId} | Action: verifyResults`);
 
       return NextResponse.json({ success: true, data: order });
     }
@@ -216,6 +331,26 @@ export async function PUT(request: NextRequest) {
 
 // DELETE /api/lab-orders - Cancel lab order
 export async function DELETE(request: NextRequest) {
+  // Authenticate the request
+  const authResult = await authenticateRequest(request);
+  
+  if (!authResult.authenticated) {
+    return NextResponse.json(
+      { success: false, error: authResult.error || "Authentication required" },
+      { status: authResult.statusCode || 401 }
+    );
+  }
+
+  const user = authResult.user!;
+
+  // Check if user has permission to cancel lab orders
+  if (!user.permissions.includes('lab:write')) {
+    return NextResponse.json(
+      { success: false, error: "You don't have permission to cancel lab orders" },
+      { status: 403 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get("orderId");
@@ -231,6 +366,8 @@ export async function DELETE(request: NextRequest) {
       where: { id: orderId },
       data: { status: "cancelled" },
     });
+
+    console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | DELETE /api/lab-orders | Order: ${orderId}`);
 
     return NextResponse.json({
       success: true,

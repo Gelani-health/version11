@@ -9,7 +9,9 @@ export type UserRole =
   | 'admin' 
   | 'specialist' 
   | 'pharmacist' 
-  | 'receptionist';
+  | 'receptionist'
+  | 'radiologist'
+  | 'lab_worker';
 
 export type Permission = 
   | 'patient:read'
@@ -31,7 +33,19 @@ export type Permission =
   | 'audit_log:read'
   | 'employee:read'
   | 'employee:write'
-  | 'ai:use';
+  | 'ai:use'
+  // Lab-specific permissions
+  | 'lab:read'
+  | 'lab:write'
+  | 'lab:result_entry'
+  | 'lab:verify'
+  | 'lab:approve'
+  // Imaging-specific permissions
+  | 'imaging:read'
+  | 'imaging:write'
+  | 'imaging:perform'
+  | 'imaging:interpret'
+  | 'imaging:approve';
 
 // Role-Permission mapping
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
@@ -50,6 +64,13 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'nurse_task:read',
     'nurse_task:write',
     'ai:use',
+    // Lab permissions for doctors
+    'lab:read',
+    'lab:write',
+    'lab:verify',
+    // Imaging permissions for doctors
+    'imaging:read',
+    'imaging:write',
   ],
   nurse: [
     'patient:read',
@@ -60,6 +81,10 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'clinical_order:read',
     'nurse_task:read',
     'nurse_task:write',
+    // Lab permissions for nurses
+    'lab:read',
+    // Imaging permissions for nurses
+    'imaging:read',
   ],
   admin: [
     'patient:read',
@@ -78,6 +103,18 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'employee:read',
     'employee:write',
     'ai:use',
+    // Full lab permissions
+    'lab:read',
+    'lab:write',
+    'lab:result_entry',
+    'lab:verify',
+    'lab:approve',
+    // Full imaging permissions
+    'imaging:read',
+    'imaging:write',
+    'imaging:perform',
+    'imaging:interpret',
+    'imaging:approve',
   ],
   specialist: [
     'patient:read',
@@ -94,17 +131,56 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'nurse_task:read',
     'nurse_task:write',
     'ai:use',
+    // Lab permissions for specialists
+    'lab:read',
+    'lab:write',
+    'lab:verify',
+    // Imaging permissions for specialists
+    'imaging:read',
+    'imaging:write',
   ],
   pharmacist: [
     'patient:read',
     'prescription:read',
     'prescription:dispense',
     'clinical_order:read',
+    // Lab permissions for pharmacists (drug levels, etc.)
+    'lab:read',
   ],
   receptionist: [
     'patient:read',
     'patient:write',
     'vitals:read',
+    // Lab permissions for receptionists (view only)
+    'lab:read',
+    // Imaging permissions for receptionists (scheduling)
+    'imaging:read',
+  ],
+  // Radiologist - Medical imaging specialist
+  radiologist: [
+    'patient:read',
+    'clinical_order:read',
+    'ai:use',
+    // Imaging permissions - core radiologist capabilities
+    'imaging:read',
+    'imaging:write',
+    'imaging:interpret',
+    'imaging:approve',
+    // Lab permissions - radiologists may need to view related lab results
+    'lab:read',
+  ],
+  // Lab Worker - Laboratory technician/scientist
+  lab_worker: [
+    'patient:read',
+    'clinical_order:read',
+    'ai:use',
+    // Lab permissions - core lab worker capabilities
+    'lab:read',
+    'lab:write',
+    'lab:result_entry',
+    'lab:verify',
+    // Imaging permissions - lab workers may need to view related imaging
+    'imaging:read',
   ],
 };
 
@@ -226,6 +302,144 @@ export function canAssignTasks(role: UserRole): boolean {
   return hasPermission(role, 'nurse_task:write');
 }
 
+// ============================================
+// LAB PERMISSION HELPERS
+// ============================================
+
+/**
+ * Check if user can view lab orders and results
+ */
+export function canViewLab(role: UserRole): boolean {
+  return hasPermission(role, 'lab:read');
+}
+
+/**
+ * Check if user can create lab orders
+ */
+export function canOrderLab(role: UserRole): boolean {
+  return hasPermission(role, 'lab:write');
+}
+
+/**
+ * Check if user can enter lab results (lab worker/technician)
+ */
+export function canEnterLabResults(role: UserRole): boolean {
+  return hasPermission(role, 'lab:result_entry');
+}
+
+/**
+ * Check if user can verify lab results
+ */
+export function canVerifyLabResults(role: UserRole): boolean {
+  return hasPermission(role, 'lab:verify');
+}
+
+/**
+ * Check if user can approve lab results for release
+ */
+export function canApproveLabResults(role: UserRole): boolean {
+  return hasPermission(role, 'lab:approve');
+}
+
+// ============================================
+// IMAGING PERMISSION HELPERS
+// ============================================
+
+/**
+ * Check if user can view imaging orders and reports
+ */
+export function canViewImaging(role: UserRole): boolean {
+  return hasPermission(role, 'imaging:read');
+}
+
+/**
+ * Check if user can order imaging studies
+ */
+export function canOrderImaging(role: UserRole): boolean {
+  return hasPermission(role, 'imaging:write');
+}
+
+/**
+ * Check if user can perform imaging studies (technician)
+ */
+export function canPerformImaging(role: UserRole): boolean {
+  return hasPermission(role, 'imaging:perform');
+}
+
+/**
+ * Check if user can interpret imaging studies (radiologist)
+ */
+export function canInterpretImaging(role: UserRole): boolean {
+  return hasPermission(role, 'imaging:interpret');
+}
+
+/**
+ * Check if user can approve imaging reports for release
+ */
+export function canApproveImagingReport(role: UserRole): boolean {
+  return hasPermission(role, 'imaging:approve');
+}
+
+// ============================================
+// ROLE-BASED WORKFLOW HELPERS
+// ============================================
+
+/**
+ * Check if role is a radiologist
+ */
+export function isRadiologist(role: UserRole): boolean {
+  return role === 'radiologist';
+}
+
+/**
+ * Check if role is a lab worker
+ */
+export function isLabWorker(role: UserRole): boolean {
+  return role === 'lab_worker';
+}
+
+/**
+ * Check if role can perform clinical duties
+ */
+export function isClinicalRole(role: UserRole): boolean {
+  return ['doctor', 'nurse', 'specialist', 'radiologist'].includes(role);
+}
+
+/**
+ * Check if role can order diagnostic tests
+ */
+export function canOrderDiagnostics(role: UserRole): boolean {
+  return hasPermission(role, 'lab:write') || hasPermission(role, 'imaging:write');
+}
+
+/**
+ * Get roles that can work in lab module
+ */
+export function getLabModuleRoles(): UserRole[] {
+  return ['doctor', 'nurse', 'admin', 'specialist', 'lab_worker', 'pharmacist', 'receptionist'];
+}
+
+/**
+ * Get roles that can work in imaging module
+ */
+export function getImagingModuleRoles(): UserRole[] {
+  return ['doctor', 'nurse', 'admin', 'specialist', 'radiologist', 'receptionist'];
+}
+
+/**
+ * Get roles that can enter lab results
+ */
+export function getLabResultEntryRoles(): UserRole[] {
+  return ['lab_worker', 'admin'];
+}
+
+/**
+ * Get roles that can interpret imaging
+ */
+export function getImagingInterpretRoles(): UserRole[] {
+  return ['radiologist', 'admin'];
+}
+
 /**
  * Get role display name
  */
@@ -237,6 +451,8 @@ export function getRoleDisplayName(role: UserRole): string {
     specialist: 'Specialist',
     pharmacist: 'Pharmacist',
     receptionist: 'Receptionist',
+    radiologist: 'Radiologist',
+    lab_worker: 'Lab Worker',
   };
   return roleNames[role] || role;
 }
@@ -252,6 +468,8 @@ export function getRoleBadgeColor(role: UserRole): string {
     specialist: 'bg-amber-100 text-amber-700 border-amber-200',
     pharmacist: 'bg-pink-100 text-pink-700 border-pink-200',
     receptionist: 'bg-slate-100 text-slate-700 border-slate-200',
+    radiologist: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    lab_worker: 'bg-teal-100 text-teal-700 border-teal-200',
   };
   return roleColors[role] || 'bg-slate-100 text-slate-700 border-slate-200';
 }
@@ -260,14 +478,14 @@ export function getRoleBadgeColor(role: UserRole): string {
  * Validate role string
  */
 export function isValidRole(role: string): role is UserRole {
-  return ['doctor', 'nurse', 'admin', 'specialist', 'pharmacist', 'receptionist'].includes(role);
+  return ['doctor', 'nurse', 'admin', 'specialist', 'pharmacist', 'receptionist', 'radiologist', 'lab_worker'].includes(role);
 }
 
 /**
  * Get all available roles
  */
 export function getAllRoles(): UserRole[] {
-  return ['doctor', 'nurse', 'admin', 'specialist', 'pharmacist', 'receptionist'];
+  return ['doctor', 'nurse', 'admin', 'specialist', 'pharmacist', 'receptionist', 'radiologist', 'lab_worker'];
 }
 
 /**

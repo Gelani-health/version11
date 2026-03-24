@@ -72,6 +72,10 @@ async function validateApiKey(apiKey: string): Promise<AuthResult> {
           'clinical_order:read', 'clinical_order:write',
           'nurse_task:read', 'nurse_task:write',
           'audit_log:read', 'employee:read', 'employee:write', 'ai:use',
+          // Lab permissions
+          'lab:read', 'lab:write', 'lab:result_entry', 'lab:verify', 'lab:approve',
+          // Imaging permissions
+          'imaging:read', 'imaging:write', 'imaging:perform', 'imaging:interpret', 'imaging:approve',
         ],
       },
     };
@@ -114,12 +118,14 @@ async function validateApiKey(apiKey: string): Promise<AuthResult> {
  */
 function getRolePermissions(role: UserRole): Permission[] {
   const rolePermissions: Record<UserRole, Permission[]> = {
-    doctor: ['patient:read', 'patient:write', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'soap_note:amend', 'vitals:read', 'prescription:read', 'prescription:write', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'ai:use'],
-    nurse: ['patient:read', 'soap_note:read', 'vitals:read', 'vitals:write', 'prescription:read', 'clinical_order:read', 'nurse_task:read', 'nurse_task:write'],
-    admin: ['patient:read', 'patient:write', 'patient:delete', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'vitals:read', 'prescription:read', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'audit_log:read', 'employee:read', 'employee:write', 'ai:use'],
-    specialist: ['patient:read', 'patient:write', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'soap_note:amend', 'vitals:read', 'prescription:read', 'prescription:write', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'ai:use'],
-    pharmacist: ['patient:read', 'prescription:read', 'prescription:dispense', 'clinical_order:read'],
-    receptionist: ['patient:read', 'patient:write', 'vitals:read'],
+    doctor: ['patient:read', 'patient:write', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'soap_note:amend', 'vitals:read', 'prescription:read', 'prescription:write', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'ai:use', 'lab:read', 'lab:write', 'lab:verify', 'imaging:read', 'imaging:write'],
+    nurse: ['patient:read', 'soap_note:read', 'vitals:read', 'vitals:write', 'prescription:read', 'clinical_order:read', 'nurse_task:read', 'nurse_task:write', 'lab:read', 'imaging:read'],
+    admin: ['patient:read', 'patient:write', 'patient:delete', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'vitals:read', 'prescription:read', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'audit_log:read', 'employee:read', 'employee:write', 'ai:use', 'lab:read', 'lab:write', 'lab:result_entry', 'lab:verify', 'lab:approve', 'imaging:read', 'imaging:write', 'imaging:perform', 'imaging:interpret', 'imaging:approve'],
+    specialist: ['patient:read', 'patient:write', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'soap_note:amend', 'vitals:read', 'prescription:read', 'prescription:write', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'ai:use', 'lab:read', 'lab:write', 'lab:verify', 'imaging:read', 'imaging:write'],
+    pharmacist: ['patient:read', 'prescription:read', 'prescription:dispense', 'clinical_order:read', 'lab:read'],
+    receptionist: ['patient:read', 'patient:write', 'vitals:read', 'lab:read', 'imaging:read'],
+    radiologist: ['patient:read', 'clinical_order:read', 'ai:use', 'imaging:read', 'imaging:write', 'imaging:interpret', 'imaging:approve', 'lab:read'],
+    lab_worker: ['patient:read', 'clinical_order:read', 'ai:use', 'lab:read', 'lab:write', 'lab:result_entry', 'lab:verify', 'imaging:read'],
   };
   return rolePermissions[role] || [];
 }

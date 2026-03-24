@@ -1,0 +1,69 @@
+# Gelani Healthcare Platform - Development Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  gelani-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+
+  medical-rag:
+    build:
+      context: ./mini-services/medical-rag-service
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 3031 --reload
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./mini-services/medical-rag-service:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./mini-services/medical-rag-service
+          target: /app
+
+  langchain-rag:
+    build:
+      context: ./mini-services/langchain-rag-service
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 3032 --reload
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./mini-services/langchain-rag-service:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./mini-services/langchain-rag-service
+          target: /app
+
+  medasr:
+    build:
+      context: ./mini-services/medasr-service
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 3033 --reload
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./mini-services/medasr-service:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./mini-services/medasr-service
+          target: /app
+
+  # Disable cloudflared in development (use local access)
+  cloudflared:
+    profiles:
+      - tunnel

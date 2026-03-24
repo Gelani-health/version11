@@ -22,7 +22,14 @@
     "db:restore": "bunx tsx scripts/backup-db.ts restore",
     "db:safe-push": "bunx tsx scripts/db-safe-push.ts",
     "setup": "bun install && bun run db:generate && bun run db:push && bun run db:seed",
-    "setup:services": "cd mini-services && python3 -m venv venv && source venv/bin/activate && pip install -r medical-rag-service/requirements.txt"
+    "setup:services": "cd mini-services && python3 -m venv venv && source venv/bin/activate && pip install -r medical-rag-service/requirements.txt",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up",
+    "docker:preview": "docker compose up -d && docker compose logs -f gelani-app",
+    "preview": "npm run services:start && npm run dev"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

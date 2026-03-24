@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
 
 // Default RAG services configuration
 const DEFAULT_RAG_SERVICES = [
@@ -55,10 +56,19 @@ const DEFAULT_RAG_SERVICES = [
   }
 ];
 
-// ============================================
-// GET - Retrieve RAG configurations
-// ============================================
-export async function GET(request: NextRequest) {
+/**
+ * GET - Retrieve RAG configurations
+ * Permission: employee:read (admin only)
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const serviceName = searchParams.get('serviceName');
@@ -125,12 +135,21 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// ============================================
-// POST - Create or Update RAG configuration
-// ============================================
-export async function POST(request: NextRequest) {
+/**
+ * POST - Create or Update RAG configuration
+ * Permission: employee:read (admin only)
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await request.json();
 
@@ -213,12 +232,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// ============================================
-// PUT - Set default RAG service
-// ============================================
-export async function PUT(request: NextRequest) {
+/**
+ * PUT - Set default RAG service
+ * Permission: employee:write (admin only)
+ */
+export const PUT = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { serviceName } = body;
@@ -275,12 +303,21 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// ============================================
-// DELETE - Remove RAG configuration
-// ============================================
-export async function DELETE(request: NextRequest) {
+/**
+ * DELETE - Remove RAG configuration
+ * Permission: employee:write (admin only)
+ */
+export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const serviceName = searchParams.get('serviceName');
@@ -307,7 +344,7 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
 // ============================================
 // Helper Functions

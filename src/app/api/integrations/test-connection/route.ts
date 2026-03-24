@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
 interface BahmniConfig {
   url: string;
@@ -355,7 +356,11 @@ async function testOdooConnection(config: OdooConfig): Promise<{
   }
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * POST - Test connection to integration
+ * Permission: employee:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { integrationType, config } = body;
@@ -417,4 +422,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });

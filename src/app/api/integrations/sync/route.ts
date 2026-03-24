@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
-// Perform sync for a specific integration module
-export async function POST(request: NextRequest) {
+/**
+ * POST - Perform sync for a specific integration module
+ * Permission: employee:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { integrationType, module } = body;
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
 async function performBahmniSync(module: string | undefined, syncLogId: string): Promise<{
   recordsSynced: number;

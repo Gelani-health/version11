@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { searchMedicalTerms } from "@/lib/medical-dictionary";
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 interface SmartSuggestion {
   term: string;
@@ -12,6 +13,16 @@ interface SmartSuggestion {
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { query, context, patientContext } = body;
@@ -119,6 +130,16 @@ Suggest relevant medical terms that could complete this.`;
 }
 
 export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q") || "";
   

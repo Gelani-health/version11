@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 const RAG_SERVICE_URL = process.env.MEDICAL_RAG_SERVICE_URL || 'http://localhost:3031';
 
@@ -25,6 +26,16 @@ interface DiagnosticRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body: DiagnosticRequest = await request.json();
 

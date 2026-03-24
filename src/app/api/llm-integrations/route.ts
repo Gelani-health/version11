@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
 // LLM Integrations API - Single Source of Truth for AI Providers
 // Supports full CRUD operations with the updated schema
@@ -51,11 +52,22 @@ function prepareIntegrationResponse(integration: {
   };
 }
 
-// GET - List all LLM integrations
-// Query params:
-// - forSelection=true: Return simplified data for dropdown
-// - activeOnly=true: Return only active integrations
-export async function GET(request: NextRequest) {
+/**
+ * GET - List all LLM integrations
+ * Permission: employee:read (admin only)
+ * Query params:
+ * - forSelection=true: Return simplified data for dropdown
+ * - activeOnly=true: Return only active integrations
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const forSelection = searchParams.get("forSelection") === "true";
@@ -106,10 +118,21 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// POST - Create new LLM integration
-export async function POST(request: NextRequest) {
+/**
+ * POST - Create new LLM integration
+ * Permission: employee:read (admin only)
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await request.json();
     const {
@@ -183,10 +206,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// PUT - Update LLM integration
-export async function PUT(request: NextRequest) {
+/**
+ * PUT - Update LLM integration
+ * Permission: employee:write (admin only)
+ */
+export const PUT = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { id, ...updateData } = body;
@@ -254,10 +288,21 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// DELETE - Delete LLM integration
-export async function DELETE(request: NextRequest) {
+/**
+ * DELETE - Delete LLM integration
+ * Permission: employee:write (admin only)
+ */
+export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -312,4 +357,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });

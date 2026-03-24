@@ -1,5 +1,19 @@
+/**
+ * Reinforcement Learning API - HIPAA Compliant
+ * 
+ * RL-based AI feedback and optimization system
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: ai:use
+ * - POST: ai:use
+ * 
+ * Audit trail is maintained for all RL operations.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { createAuditLog } from "@/lib/audit-service";
 
 // Default arms to initialize
 const DEFAULT_ARMS = [
@@ -35,8 +49,11 @@ const DEFAULT_ARMS = [
   { armKey: "cds-preventive-care", armType: "cds", category: "Preventive Care" },
 ];
 
-// GET /api/rl/stats - Get RL statistics
-export async function GET() {
+/**
+ * GET /api/rl/stats - Get RL statistics
+ * Permission: ai:use
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     // Check if any arms exist
     const armCount = await db.rLArm.count();
@@ -101,6 +118,15 @@ export async function GET() {
         totalPulls: arm.totalPulls,
       }));
 
+    // Log access
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'soap_note', // Using soap_note as closest resource type for AI
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -124,6 +150,10 @@ export async function GET() {
         topPerformers,
         needsExploration,
       },
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Failed to get RL stats:", error);
@@ -132,10 +162,13 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });
 
-// POST /api/rl/stats - Initialize RL system
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/rl/stats - Initialize RL system or submit feedback
+ * Permission: ai:use
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { action } = body || {};
@@ -148,6 +181,16 @@ export async function POST(request: NextRequest) {
         const arms = await db.rLArm.findMany({
           where: { isActive: true },
           orderBy: { qValue: "desc" },
+        });
+
+        // Log initialization access
+        await createAuditLog({
+          actorId: user.employeeId,
+          actorName: user.name,
+          actorRole: user.role,
+          actionType: 'read',
+          resourceType: 'soap_note',
+          newValue: JSON.stringify({ action: 'init', existingCount }),
         });
 
         return NextResponse.json({
@@ -179,6 +222,10 @@ export async function POST(request: NextRequest) {
               totalPulls: arm.totalPulls,
             })),
           },
+          meta: {
+            accessedBy: user.employeeId,
+            accessedAt: new Date().toISOString(),
+          },
         });
       }
 
@@ -197,6 +244,16 @@ export async function POST(request: NextRequest) {
       const arms = await db.rLArm.findMany({
         where: { isActive: true },
         orderBy: { qValue: "desc" },
+      });
+
+      // Log initialization
+      await createAuditLog({
+        actorId: user.employeeId,
+        actorName: user.name,
+        actorRole: user.role,
+        actionType: 'create',
+        resourceType: 'soap_note',
+        newValue: JSON.stringify({ action: 'init', armsCreated: arms.length }),
       });
 
       return NextResponse.json({
@@ -227,6 +284,10 @@ export async function POST(request: NextRequest) {
             category: arm.category,
             totalPulls: arm.totalPulls,
           })),
+        },
+        meta: {
+          createdBy: user.employeeId,
+          createdAt: new Date().toISOString(),
         },
       });
     }
@@ -287,7 +348,7 @@ export async function POST(request: NextRequest) {
           suggestionType,
           suggestionText,
           sessionId,
-          userId,
+          userId: user.employeeId, // Use authenticated user ID
         },
       });
 
@@ -346,6 +407,22 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // Log feedback submission
+      await createAuditLog({
+        actorId: user.employeeId,
+        actorName: user.name,
+        actorRole: user.role,
+        actionType: 'create',
+        resourceType: 'soap_note',
+        newValue: JSON.stringify({
+          action: 'feedback',
+          armKey,
+          feedbackType,
+          rating,
+          reward,
+        }),
+      });
+
       return NextResponse.json({
         success: true,
         data: {
@@ -354,6 +431,10 @@ export async function POST(request: NextRequest) {
           reward,
           newQValue,
           updated: true,
+        },
+        meta: {
+          createdBy: user.employeeId,
+          createdAt: new Date().toISOString(),
         },
       });
     }
@@ -369,4 +450,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });

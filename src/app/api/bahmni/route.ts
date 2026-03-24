@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // FHIR R4 Resource Types
 type FHIRResourceType = "Patient" | "Encounter" | "Condition" | "MedicationRequest" | "Observation" | "DocumentReference";
@@ -44,6 +45,16 @@ const BAHMNI_CONFIG = {
 };
 
 export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('employee:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action");
 
@@ -74,6 +85,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('employee:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { action, data, resourceType } = body;

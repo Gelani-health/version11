@@ -1,15 +1,24 @@
 /**
- * Employees API
- * CRUD operations for hospital staff
+ * Employees API - HIPAA Compliant
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: employee:read
+ * - POST: employee:write
+ * 
+ * Audit trail is maintained for all access.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit-service';
 import { isValidRole } from '@/lib/rbac-middleware';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
 
-// GET /api/employees - List employees
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/employees - List employees
+ * Permission: employee:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const role = searchParams.get('role');
@@ -58,7 +67,23 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: employees });
+    // Log access
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'employee',
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      data: employees,
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error fetching employees:', error);
     return NextResponse.json(
@@ -66,10 +91,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// POST /api/employees - Create employee
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/employees - Create employee
+ * Permission: employee:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const {
@@ -133,15 +161,29 @@ export async function POST(request: NextRequest) {
 
     // Create audit log
     await createAuditLog({
-      actorId: 'system',
-      actorName: 'System',
-      actorRole: 'admin',
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
       actionType: 'create',
       resourceType: 'employee',
       resourceId: employee.id,
+      newValue: JSON.stringify({
+        employeeId,
+        firstName,
+        lastName,
+        email,
+        role,
+      }),
     });
 
-    return NextResponse.json({ success: true, data: employee }, { status: 201 });
+    return NextResponse.json({ 
+      success: true, 
+      data: employee,
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating employee:', error);
     return NextResponse.json(
@@ -149,4 +191,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });

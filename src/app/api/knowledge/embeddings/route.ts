@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
 import { generateAllKnowledgeEmbeddings, storeKnowledgeEmbedding } from '@/lib/embeddings/vector-search';
 import { generateEmbedding } from '@/lib/embeddings/service';
 
-// API to manage knowledge embeddings
-
-export async function POST(request: NextRequest) {
+/**
+ * POST - Manage knowledge embeddings
+ * Permission: ai:use
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { action, knowledgeId } = body;
@@ -83,9 +86,13 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });
 
-export async function GET(request: NextRequest) {
+/**
+ * GET - Get embedding statistics
+ * Permission: ai:use
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     // Get embedding statistics
     const totalKnowledge = await db.healthcareKnowledge.count({
@@ -128,4 +135,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });

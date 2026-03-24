@@ -1,27 +1,23 @@
 /**
- * Audit Logs API
+ * Audit Logs API - HIPAA Compliant
+ * 
  * Query audit logs (admin only)
+ * Permission: audit_log:read
+ * 
+ * All access is logged for compliance.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getFilteredAuditLogs, formatActionType, formatResourceType, type AuditActionType, type AuditResourceType } from '@/lib/audit-service';
-import { hasPermission, type UserRole } from '@/lib/rbac-middleware';
+import { getFilteredAuditLogs, formatActionType, formatResourceType, createAuditLog, type AuditActionType, type AuditResourceType } from '@/lib/audit-service';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
 
-// GET /api/audit-logs - Query audit logs
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/audit-logs - Query audit logs
+ * Permission: audit_log:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const searchParams = request.nextUrl.searchParams;
-    
-    // Get user role from header (in production, this would come from session)
-    const userRole = searchParams.get('userRole') as UserRole || 'admin';
-    
-    // Check if user can view audit logs
-    if (!hasPermission(userRole, 'audit_log:read')) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized to view audit logs' },
-        { status: 403 }
-      );
-    }
 
     const filters = {
       actorId: searchParams.get('actorId') || undefined,
@@ -43,6 +39,15 @@ export async function GET(request: NextRequest) {
       resourceTypeDisplay: formatResourceType(log.resourceType as AuditResourceType),
     }));
 
+    // Log access to audit logs (meta-audit)
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'audit_log',
+    });
+
     return NextResponse.json({
       success: true,
       data: formattedLogs,
@@ -52,6 +57,10 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / filters.pageSize),
       },
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error('Error fetching audit logs:', error);
@@ -60,4 +69,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['audit_log:read'] });

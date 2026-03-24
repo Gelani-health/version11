@@ -1,5 +1,19 @@
+/**
+ * Clinical Support API - HIPAA Compliant
+ * 
+ * AI-powered clinical decision support for healthcare professionals
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: ai:use
+ * - POST: ai:use
+ * 
+ * Audit trail is maintained for all AI interactions.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { createAuditLog } from "@/lib/audit-service";
 
 interface DiagnosisSuggestion {
   condition: string;
@@ -37,7 +51,48 @@ async function getLLMConfig() {
   };
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * GET /api/clinical-support - Get clinical support API status
+ * Permission: ai:use
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  try {
+    // Log access
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'access',
+      resourceType: 'soap_note', // Using soap_note as closest resource type for AI
+    });
+
+    return NextResponse.json({
+      status: "Clinical Decision Support API is running",
+      features: [
+        "Differential diagnosis generation",
+        "ICD-10 code suggestions",
+        "Drug interaction alerts",
+        "Clinical guideline recommendations",
+      ],
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Clinical Support GET Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to get clinical support status" },
+      { status: 500 }
+    );
+  }
+}, { requiredPermissions: ['ai:use'] });
+
+/**
+ * POST /api/clinical-support - Get clinical decision support
+ * Permission: ai:use
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { query, patientContext, type } = body;
@@ -150,11 +205,30 @@ Please provide clinical decision support for this case. Include differential dia
       },
     });
 
+    // Log AI interaction for audit
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'create',
+      resourceType: 'soap_note',
+      newValue: JSON.stringify({
+        queryType: type || 'clinical-support',
+        queryLength: query?.length || 0,
+        hasPatientContext: !!patientContext,
+        model: llmConfig.displayName || llmConfig.model,
+      }),
+    });
+
     return NextResponse.json({
       success: true,
       data: responseData,
       model: llmConfig.displayName || llmConfig.model,
       timestamp: new Date().toISOString(),
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Clinical Support API Error:", error);
@@ -167,16 +241,4 @@ Please provide clinical decision support for this case. Include differential dia
       { status: 500 }
     );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "Clinical Decision Support API is running",
-    features: [
-      "Differential diagnosis generation",
-      "ICD-10 code suggestions",
-      "Drug interaction alerts",
-      "Clinical guideline recommendations",
-    ],
-  });
-}
+}, { requiredPermissions: ['ai:use'] });

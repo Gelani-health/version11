@@ -1,15 +1,43 @@
 /**
- * SOAP Notes API
- * CRUD operations for SOAP notes
+ * SOAP Notes API - HIPAA Compliant
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: soap_note:read
+ * - POST: soap_note:write
+ * 
+ * Audit trail is maintained for all PHI access.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit-service';
+import { authenticateRequest, AuthenticatedUser, checkPermission } from '@/lib/auth-middleware';
 
-// GET /api/soap-notes - List SOAP notes
+/**
+ * GET /api/soap-notes - List SOAP notes
+ * Permission: soap_note:read
+ */
 export async function GET(request: NextRequest) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'soap_note:read')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: soap_note:read required" },
+        { status: 403 }
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
     const status = searchParams.get('status');
@@ -58,7 +86,17 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: soapNotes });
+    // Log PHI access
+    await logPHIAccess(user, 'READ', 'soap_notes', soapNotes.length);
+
+    return NextResponse.json({
+      success: true,
+      data: soapNotes,
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error fetching SOAP notes:', error);
     return NextResponse.json(
@@ -68,9 +106,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/soap-notes - Create SOAP note
+/**
+ * POST /api/soap-notes - Create SOAP note
+ * Permission: soap_note:write
+ */
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'soap_note:write')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: soap_note:write required" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const {
       patientId,
@@ -154,15 +214,14 @@ export async function POST(request: NextRequest) {
       dispositionDestination,
       dispositionReason,
       // Metadata
-      createdBy,
       aiSuggestionsUsed,
       aiConfidence,
     } = body;
 
-    // Validate required fields
-    if (!patientId || !encounterId || !createdBy) {
+    // Validate required fields - use authenticated user for createdBy
+    if (!patientId || !encounterId) {
       return NextResponse.json(
-        { success: false, error: 'Patient ID, encounter ID, and createdBy are required' },
+        { success: false, error: 'Patient ID and encounter ID are required' },
         { status: 400 }
       );
     }
@@ -179,7 +238,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create SOAP note
+    // Create SOAP note with authenticated user as creator
     const soapNote = await db.soapNote.create({
       data: {
         patientId,
@@ -262,8 +321,8 @@ export async function POST(request: NextRequest) {
         disposition,
         dispositionDestination,
         dispositionReason,
-        // Metadata
-        createdBy,
+        // Metadata - use authenticated user
+        createdBy: user.employeeId,
         status: 'draft',
         aiSuggestionsUsed: aiSuggestionsUsed || false,
         aiConfidence,
@@ -278,21 +337,63 @@ export async function POST(request: NextRequest) {
 
     // Create audit log
     await createAuditLog({
-      actorId: createdBy,
-      actorName: 'Clinician',
-      actorRole: 'doctor',
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
       actionType: 'create',
       resourceType: 'soap_note',
       resourceId: soapNote.id,
       patientMrn: patient?.mrn || undefined,
     });
 
-    return NextResponse.json({ success: true, data: soapNote }, { status: 201 });
+    // Log PHI access
+    await logPHIAccess(user, 'CREATE', 'soap_note', soapNote.id, { patientId });
+
+    return NextResponse.json({
+      success: true,
+      data: soapNote,
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating SOAP note:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to create SOAP note' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Log PHI access for HIPAA compliance
+ */
+async function logPHIAccess(
+  user: AuthenticatedUser,
+  action: string,
+  resource: string,
+  resourceId: string | number,
+  details?: any
+): Promise<void> {
+  try {
+    await db.aIInteraction.create({
+      data: {
+        interactionType: 'phi_access',
+        prompt: `${action} ${resource}`,
+        response: JSON.stringify({
+          resourceId,
+          details,
+          userRole: user.role,
+        }),
+        humanReviewed: false,
+        modelUsed: 'audit-system',
+        patientId: typeof resourceId === 'string' ? resourceId : null,
+      },
+    });
+
+    console.log(`[PHI AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Action: ${action} | Resource: ${resource}:${resourceId}`);
+  } catch (error) {
+    console.error('Failed to log PHI access:', error);
   }
 }

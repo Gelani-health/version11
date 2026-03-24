@@ -1,7 +1,62 @@
+/**
+ * Documentation API - HIPAA Compliant
+ * 
+ * AI-powered SOAP note generation and documentation assistance
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: soap_note:read
+ * - POST: soap_note:write
+ * 
+ * Audit trail is maintained for all documentation operations.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { createAuditLog } from "@/lib/audit-service";
 
-export async function POST(request: NextRequest) {
+/**
+ * GET /api/documentation - Get documentation API status
+ * Permission: soap_note:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
+  try {
+    // Log access
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'soap_note',
+    });
+
+    return NextResponse.json({
+      status: "Documentation Assistant API is running",
+      features: [
+        "SOAP note generation",
+        "ICD-10 code suggestions",
+        "Template-based documentation",
+        "AI-assisted medical writing",
+      ],
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Documentation GET Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to get documentation status" },
+      { status: 500 }
+    );
+  }
+}, { requiredPermissions: ['soap_note:read'] });
+
+/**
+ * POST /api/documentation - Generate SOAP note
+ * Permission: soap_note:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { patientInfo, visitType, notes, chiefComplaint } = body;
@@ -47,6 +102,22 @@ Please generate a complete SOAP note.`;
     // Parse the SOAP note into sections
     const sections = parseSOAPSections(soapNote);
 
+    // Log documentation generation
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'create',
+      resourceType: 'soap_note',
+      newValue: JSON.stringify({
+        patientName: patientInfo?.name,
+        visitType,
+        chiefComplaint,
+        notesLength: notes?.length || 0,
+        soapLength: soapNote.length,
+      }),
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -54,6 +125,10 @@ Please generate a complete SOAP note.`;
         sections,
         patientInfo,
         generatedAt: new Date().toISOString(),
+      },
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
       },
     });
   } catch (error) {
@@ -66,7 +141,7 @@ Please generate a complete SOAP note.`;
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['soap_note:write'] });
 
 function parseSOAPSections(content: string) {
   const sections = {
@@ -88,16 +163,4 @@ function parseSOAPSections(content: string) {
   if (planMatch) sections.plan = planMatch[1].trim();
 
   return sections;
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "Documentation Assistant API is running",
-    features: [
-      "SOAP note generation",
-      "ICD-10 code suggestions",
-      "Template-based documentation",
-      "AI-assisted medical writing",
-    ],
-  });
 }

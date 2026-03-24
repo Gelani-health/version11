@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { 
   Activity, 
@@ -39,6 +39,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Import module components
 import { ClinicalDecisionSupport } from "@/components/clinical-decision-support";
@@ -75,30 +82,79 @@ import { RAGSettings } from "@/components/rag-settings";
 import { UnifiedLabModule } from "@/components/unified-lab-module";
 import { UnifiedImagingModule } from "@/components/unified-imaging-module";
 
-const sidebarItems = [
+// Import role-based access
+import { useRoleBasedAccess, getVisibleModules } from "@/hooks/use-role-based-access";
+import { UserRole, Permission } from "@/lib/rbac-middleware";
+
+// User roles for demo
+const DEMO_USERS: Record<string, { id: string; employeeId: string; role: UserRole; email: string; name: string; permissions: Permission[] }> = {
+  doctor: {
+    id: 'demo-doctor',
+    employeeId: 'DOC-001',
+    role: 'doctor',
+    email: 'doctor@gelani-health.ai',
+    name: 'Dr. Demo User',
+    permissions: ['patient:read', 'patient:write', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'vitals:read', 'prescription:read', 'prescription:write', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'ai:use', 'lab:read', 'lab:write', 'lab:verify', 'imaging:read', 'imaging:write'],
+  },
+  radiologist: {
+    id: 'demo-radiologist',
+    employeeId: 'RAD-001',
+    role: 'radiologist',
+    email: 'radiologist@gelani-health.ai',
+    name: 'Dr. Radiologist',
+    permissions: ['patient:read', 'clinical_order:read', 'ai:use', 'imaging:read', 'imaging:write', 'imaging:interpret', 'imaging:approve', 'lab:read'],
+  },
+  lab_worker: {
+    id: 'demo-lab',
+    employeeId: 'LAB-001',
+    role: 'lab_worker',
+    email: 'lab@gelani-health.ai',
+    name: 'Lab Technician',
+    permissions: ['patient:read', 'clinical_order:read', 'ai:use', 'lab:read', 'lab:write', 'lab:result_entry', 'lab:verify', 'imaging:read'],
+  },
+  nurse: {
+    id: 'demo-nurse',
+    employeeId: 'NRS-001',
+    role: 'nurse',
+    email: 'nurse@gelani-health.ai',
+    name: 'Nurse Demo',
+    permissions: ['patient:read', 'soap_note:read', 'vitals:read', 'vitals:write', 'prescription:read', 'clinical_order:read', 'nurse_task:read', 'nurse_task:write', 'lab:read', 'imaging:read'],
+  },
+  admin: {
+    id: 'demo-admin',
+    employeeId: 'ADM-001',
+    role: 'admin',
+    email: 'admin@gelani-health.ai',
+    name: 'Admin User',
+    permissions: ['patient:read', 'patient:write', 'patient:delete', 'soap_note:read', 'soap_note:write', 'soap_note:sign', 'vitals:read', 'prescription:read', 'clinical_order:read', 'clinical_order:write', 'nurse_task:read', 'nurse_task:write', 'audit_log:read', 'employee:read', 'employee:write', 'ai:use', 'lab:read', 'lab:write', 'lab:result_entry', 'lab:verify', 'lab:approve', 'imaging:read', 'imaging:write', 'imaging:perform', 'imaging:interpret', 'imaging:approve'],
+  },
+};
+
+// All sidebar items with permission requirements
+const allSidebarItems = [
   // Main Clinical Features
-  { id: "dashboard", label: "Dashboard", icon: Activity },
-  { id: "smart-identity", label: "Smart Identity", icon: Shield },
-  { id: "patients", label: "Patients", icon: Users },
-  { id: "consultations", label: "Consultations", icon: Stethoscope },
-  { id: "medical-rag", label: "Medical RAG", icon: Database },
-  { id: "rag-healthcare", label: "RAG Healthcare", icon: Database },
-  { id: "healthcare-ai", label: "Healthcare AI", icon: Brain },
-  { id: "clinical-support", label: "Clinical Support", icon: Activity },
-  { id: "documentation", label: "Documentation", icon: FileText },
-  { id: "drugs", label: "Drug Safety", icon: Pill },
-  { id: "imaging", label: "Imaging", icon: ImageIcon },
-  { id: "lab", label: "Laboratory", icon: FlaskConical },
+  { id: "dashboard", label: "Dashboard", icon: Activity, permission: null },
+  { id: "smart-identity", label: "Smart Identity", icon: Shield, permission: 'patient:read' as Permission },
+  { id: "patients", label: "Patients", icon: Users, permission: 'patient:read' as Permission },
+  { id: "consultations", label: "Consultations", icon: Stethoscope, permission: 'clinical_order:read' as Permission },
+  { id: "medical-rag", label: "Medical RAG", icon: Database, permission: 'ai:use' as Permission },
+  { id: "rag-healthcare", label: "RAG Healthcare", icon: Database, permission: 'ai:use' as Permission },
+  { id: "healthcare-ai", label: "Healthcare AI", icon: Brain, permission: 'ai:use' as Permission },
+  { id: "clinical-support", label: "Clinical Support", icon: Activity, permission: 'ai:use' as Permission },
+  { id: "documentation", label: "Documentation", icon: FileText, permission: 'soap_note:read' as Permission },
+  { id: "drugs", label: "Drug Safety", icon: Pill, permission: 'prescription:read' as Permission },
+  { id: "imaging", label: "Imaging", icon: ImageIcon, permission: 'imaging:read' as Permission },
+  { id: "lab", label: "Laboratory", icon: FlaskConical, permission: 'lab:read' as Permission },
 ];
 
 // Configuration/Integration section (shown at bottom)
-const configItems = [
-  { id: "advanced-ai", label: "AI Intelligence", icon: Zap },
-  { id: "rl-dashboard", label: "AI Learning", icon: Sparkles },
-  { id: "bahmni", label: "Integrations", icon: Database },
-  { id: "voice", label: "Voice Notes", icon: Mic },
-  { id: "analytics", label: "Analytics", icon: TrendingUp },
-  { id: "settings", label: "Settings", icon: Settings },
+const allConfigItems = [
+  { id: "advanced-ai", label: "AI Intelligence", icon: Zap, permission: 'ai:use' as Permission },
+  { id: "rl-dashboard", label: "AI Learning", icon: Sparkles, permission: 'ai:use' as Permission },
+  { id: "bahmni", label: "Integrations", icon: Database, permission: 'employee:read' as Permission },
+  { id: "voice", label: "Voice Notes", icon: Mic, permission: 'soap_note:write' as Permission },
+  { id: "analytics", label: "Analytics", icon: TrendingUp, permission: 'audit_log:read' as Permission },
+  { id: "settings", label: "Settings", icon: Settings, roles: ['admin'] as UserRole[] },
 ];
 
 export default function AIHealthcareDashboard() {
@@ -106,6 +162,32 @@ export default function AIHealthcareDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [currentRole, setCurrentRole] = useState<UserRole>("doctor");
+
+  // Get current user based on selected role
+  const currentUser = DEMO_USERS[currentRole];
+  const { can, is, ui, permissions } = useRoleBasedAccess(currentUser);
+
+  // Filter sidebar items based on permissions
+  const sidebarItems = useMemo(() => {
+    return allSidebarItems.filter(item => {
+      if (!item.permission) return true; // Always visible (Dashboard)
+      return permissions.includes(item.permission!);
+    });
+  }, [permissions]);
+
+  // Filter config items based on permissions/roles
+  const configItems = useMemo(() => {
+    return allConfigItems.filter(item => {
+      if (item.roles) {
+        return item.roles.includes(currentRole);
+      }
+      if (item.permission) {
+        return permissions.includes(item.permission!);
+      }
+      return true;
+    });
+  }, [permissions, currentRole]);
 
   const handleNavigate = (moduleId: string, patientId?: string) => {
     setActiveModule(moduleId);
@@ -188,6 +270,22 @@ export default function AIHealthcareDashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Role Selector */}
+            <div className="hidden lg:flex items-center gap-2">
+              <span className="text-xs text-slate-500">View as:</span>
+              <Select value={currentRole} onValueChange={(value) => setCurrentRole(value as UserRole)}>
+                <SelectTrigger className="w-[140px] h-8 text-xs">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="doctor">Doctor</SelectItem>
+                  <SelectItem value="radiologist">Radiologist</SelectItem>
+                  <SelectItem value="lab_worker">Lab Worker</SelectItem>
+                  <SelectItem value="nurse">Nurse</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="relative w-64 hidden md:block">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
@@ -210,10 +308,15 @@ export default function AIHealthcareDashboard() {
             </div>
             <RAGIndicator compact />
             <ThemeToggle />
-            <Avatar className="h-8 w-8">
-              <AvatarImage src="" />
-              <AvatarFallback className="bg-emerald-100 text-emerald-700 text-sm font-medium">DR</AvatarFallback>
-            </Avatar>
+            <div className="flex items-center gap-2">
+              <Badge className={`${ui.badgeColor} text-xs`}>{ui.displayName}</Badge>
+              <Avatar className="h-8 w-8">
+                <AvatarImage src="" />
+                <AvatarFallback className="bg-emerald-100 text-emerald-700 text-sm font-medium">
+                  {currentUser.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                </AvatarFallback>
+              </Avatar>
+            </div>
           </div>
         </div>
       </header>

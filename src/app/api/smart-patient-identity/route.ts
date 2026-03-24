@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { z } from 'zod';
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // Schema for creating/updating smart patient identity
 const SmartPatientIdentitySchema = z.object({
@@ -139,6 +140,16 @@ const SmartPatientIdentitySchema = z.object({
 
 // GET /api/smart-patient-identity - List all patients with smart identity
 export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('patient:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -231,6 +242,16 @@ export async function GET(request: NextRequest) {
 
 // POST /api/smart-patient-identity - Create new smart patient identity
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('patient:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const validatedData = SmartPatientIdentitySchema.parse(body);

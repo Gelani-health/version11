@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // TTS API - Text to Speech for Healthcare
 // Converts text to natural-sounding speech audio
@@ -118,6 +119,16 @@ async function getZAIInstance() {
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { 

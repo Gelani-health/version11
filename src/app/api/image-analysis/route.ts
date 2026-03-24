@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from 'z-ai-web-dev-sdk';
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 interface Finding {
   description: string;
@@ -763,6 +764,16 @@ IMPORTANT:
 - Respond with ONLY valid JSON, no markdown or additional text`;
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('imaging:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { imageType, imageBase64, patientId, clinicalContext } = body;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // Common lab tests with reference ranges for suggestions
 const commonLabTests = [
@@ -51,6 +52,16 @@ const commonLabTests = [
 
 // GET /api/ai-suggestions/lab-tests - Get lab test suggestions
 export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q")?.toLowerCase() || "";
@@ -80,6 +91,16 @@ export async function GET(request: NextRequest) {
 
 // POST /api/ai-suggestions/clinical - Get AI-powered clinical suggestions
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { context, text, cursorPosition } = body;

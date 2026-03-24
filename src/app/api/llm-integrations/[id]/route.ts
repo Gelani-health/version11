@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
 // Helper function to mask API key (show only last 4 characters)
 function maskApiKey(apiKey: string | null): string | null {
@@ -37,11 +38,23 @@ function prepareIntegrationResponse(integration: {
   };
 }
 
-// GET - Get a single LLM integration by ID
-export async function GET(
+/**
+ * GET - Get a single LLM integration by ID
+ * Permission: employee:write (admin only)
+ */
+export const GET = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+  user: AuthenticatedUser
+) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { id } = await params;
 
@@ -74,13 +87,25 @@ export async function GET(
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// PUT - Update a single LLM integration by ID
-export async function PUT(
+/**
+ * PUT - Update a single LLM integration by ID
+ * Permission: employee:write (admin only)
+ */
+export const PUT = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+  user: AuthenticatedUser
+) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -151,13 +176,25 @@ export async function PUT(
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// DELETE - Delete a single LLM integration by ID
-export async function DELETE(
+/**
+ * DELETE - Delete a single LLM integration by ID
+ * Permission: employee:write (admin only)
+ */
+export const DELETE = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+  user: AuthenticatedUser
+) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { id } = await params;
 
@@ -211,13 +248,25 @@ export async function DELETE(
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// PATCH - Partial update of a single LLM integration by ID
-export async function PATCH(
+/**
+ * PATCH - Partial update of a single LLM integration by ID
+ * Permission: employee:write (admin only)
+ */
+export const PATCH = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+  user: AuthenticatedUser
+) => {
+  // Admin only check
+  if (user.role !== 'admin') {
+    return NextResponse.json(
+      { success: false, error: 'Admin access required' },
+      { status: 403 }
+    );
+  }
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -288,4 +337,4 @@ export async function PATCH(
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });

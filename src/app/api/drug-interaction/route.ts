@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 interface Medication {
   name: string;
@@ -67,6 +68,16 @@ const mockInteractions: DrugInteraction[] = [
 ];
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('patient:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { medications } = body as { medications: Medication[] };
@@ -166,7 +177,17 @@ ${medications.map((m) => `- ${m.name} ${m.dosage || ""} ${m.frequency || ""}`).j
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('patient:read')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   return NextResponse.json({
     status: "Drug Interaction Checker API is running",
     database: "Integrated drug interaction database",

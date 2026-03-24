@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
-// POST - Test LLM integration connection
-// Accepts: { id: string }
-// Returns: { success: boolean, message: string, connectionStatus: string }
-export async function POST(request: NextRequest) {
+/**
+ * POST - Test LLM integration connection
+ * Permission: ai:use
+ * Accepts: { id: string }
+ * Returns: { success: boolean, message: string, connectionStatus: string }
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { id } = body;
@@ -223,4 +227,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });

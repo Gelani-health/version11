@@ -1,9 +1,28 @@
+/**
+ * Voice Notes API - HIPAA Compliant
+ * 
+ * Voice notes for clinical documentation with ASR transcription
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: soap_note:write
+ * - POST: soap_note:write
+ * - PATCH: soap_note:write
+ * - DELETE: soap_note:write
+ * 
+ * Audit trail is maintained for all operations.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import ZAI from "z-ai-web-dev-sdk";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { createAuditLog } from "@/lib/audit-service";
 
-// GET /api/voice-notes - Get voice notes for a patient or consultation
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/voice-notes - Get voice notes for a patient or consultation
+ * Permission: soap_note:write
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const { searchParams } = new URL(request.url);
     const patientId = searchParams.get("patientId");
@@ -23,9 +42,23 @@ export async function GET(request: NextRequest) {
       take: 50,
     });
 
+    // Log access
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'soap_note',
+      resourceId: patientId || consultationId || undefined,
+    });
+
     return NextResponse.json({
       success: true,
       data: { voiceNotes },
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error fetching voice notes:", error);
@@ -34,10 +67,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['soap_note:write'] });
 
-// POST /api/voice-notes - Transcribe audio and save voice note
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/voice-notes - Transcribe audio and save voice note
+ * Permission: soap_note:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const {
@@ -104,12 +140,32 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Log creation
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'create',
+      resourceType: 'soap_note',
+      resourceId: voiceNote.id,
+      newValue: JSON.stringify({
+        patientId,
+        consultationId,
+        noteType,
+        transcriptionLength: transcription.length,
+      }),
+    });
+
     return NextResponse.json({
       success: true,
       data: {
         voiceNote,
         transcription,
         tags,
+      },
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
       },
     });
   } catch (error) {
@@ -119,10 +175,13 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['soap_note:write'] });
 
-// PATCH /api/voice-notes - Update voice note
-export async function PATCH(request: NextRequest) {
+/**
+ * PATCH /api/voice-notes - Update voice note
+ * Permission: soap_note:write
+ */
+export const PATCH = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { id, transcription, tags, status } = body;
@@ -153,9 +212,24 @@ export async function PATCH(request: NextRequest) {
       data: updateData,
     });
 
+    // Log update
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'update',
+      resourceType: 'soap_note',
+      resourceId: id,
+      fieldChanged: Object.keys(updateData).join(', '),
+    });
+
     return NextResponse.json({
       success: true,
       data: { voiceNote },
+      meta: {
+        updatedBy: user.employeeId,
+        updatedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error updating voice note:", error);
@@ -164,10 +238,13 @@ export async function PATCH(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['soap_note:write'] });
 
-// DELETE /api/voice-notes - Delete voice note
-export async function DELETE(request: NextRequest) {
+/**
+ * DELETE /api/voice-notes - Delete voice note
+ * Permission: soap_note:write
+ */
+export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -179,13 +256,37 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Get voice note before deletion for audit log
+    const voiceNote = await db.voiceNote.findUnique({
+      where: { id },
+      select: { id: true, patientId: true, noteType: true },
+    });
+
     await db.voiceNote.delete({
       where: { id },
+    });
+
+    // Log deletion
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'delete',
+      resourceType: 'soap_note',
+      resourceId: id,
+      oldValue: JSON.stringify({
+        patientId: voiceNote?.patientId,
+        noteType: voiceNote?.noteType,
+      }),
     });
 
     return NextResponse.json({
       success: true,
       message: "Voice note deleted successfully",
+      meta: {
+        deletedBy: user.employeeId,
+        deletedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error deleting voice note:", error);
@@ -194,7 +295,7 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['soap_note:write'] });
 
 // Extract medical tags from transcription text
 function extractMedicalTags(text: string): string[] {

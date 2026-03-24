@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { routeLLMRequest } from '@/lib/llm/provider-manager';
+import { authenticateRequest } from '@/lib/auth-middleware';
 import {
   semanticKnowledgeSearch,
   semanticDrugInteractionSearch,
@@ -185,6 +186,16 @@ async function logRAGQuery(
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   const startTime = Date.now();
 
   try {
@@ -328,6 +339,16 @@ export async function POST(request: NextRequest) {
 
 // GET endpoint to search knowledge base directly
 export async function GET(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get('q');
   const category = searchParams.get('category');

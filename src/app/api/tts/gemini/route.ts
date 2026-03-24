@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // Gemini TTS API - Text to Speech using Gemini 2.5 Flash
 // Requires GEMINI_API_KEY environment variable
@@ -77,6 +78,16 @@ function prepareTextForTTS(text: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     checkApiKey();
 

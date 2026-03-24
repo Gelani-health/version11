@@ -1,20 +1,48 @@
 /**
- * Single Vitals API
- * Operations for individual vitals records
+ * Single Vitals API - HIPAA Compliant
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: vitals:read
+ * - PUT: vitals:write
+ * 
+ * Audit trail is maintained for all PHI access.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit-service';
+import { authenticateRequest, AuthenticatedUser, checkPermission } from '@/lib/auth-middleware';
 import { validateVitals, calculateVitalsStatuses, calculateBMI, type VitalsInput } from '@/lib/vitals-utils';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// GET /api/vitals/[id] - Get single vitals record
+/**
+ * GET /api/vitals/[id] - Get single vitals record
+ * Permission: vitals:read
+ */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'vitals:read')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: vitals:read required" },
+        { status: 403 }
+      );
+    }
+
     const { id } = await params;
 
     const vitals = await db.vitalSigns.findUnique({
@@ -49,7 +77,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json({ success: true, data: vitals });
+    // Log PHI access
+    await logPHIAccess(user, 'READ', 'vitals', id, { patientId: vitals.patientId });
+
+    return NextResponse.json({
+      success: true,
+      data: vitals,
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error fetching vitals:', error);
     return NextResponse.json(
@@ -59,9 +97,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT /api/vitals/[id] - Update vitals (creates amendment)
+/**
+ * PUT /api/vitals/[id] - Update vitals (creates amendment)
+ * Permission: vitals:write
+ */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'vitals:write')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: vitals:write required" },
+        { status: 403 }
+      );
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -168,9 +228,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Create audit log
     await createAuditLog({
-      actorId: existingVitals.recordedBy,
-      actorName: existingVitals.recordedByName || 'Unknown',
-      actorRole: existingVitals.recordedByRole || 'nurse',
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
       actionType: 'amend',
       resourceType: 'vitals',
       resourceId: id,
@@ -180,7 +240,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       newValue: JSON.stringify(updatedVitals),
     });
 
-    return NextResponse.json({ success: true, data: updatedVitals });
+    // Log PHI access
+    await logPHIAccess(user, 'UPDATE', 'vitals', id, { amendmentReason });
+
+    return NextResponse.json({
+      success: true,
+      data: updatedVitals,
+      meta: {
+        updatedBy: user.employeeId,
+        updatedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error updating vitals:', error);
     return NextResponse.json(
@@ -190,9 +260,31 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/vitals/[id] - Delete vitals (soft delete by marking as amendment)
+/**
+ * DELETE /api/vitals/[id] - Delete vitals (soft delete by marking as amendment)
+ * Permission: vitals:write
+ */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'vitals:write')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: vitals:write required" },
+        { status: 403 }
+      );
+    }
+
     const { id } = await params;
 
     const vitals = await db.vitalSigns.findUnique({
@@ -220,21 +312,63 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Create audit log
     await createAuditLog({
-      actorId: vitals.recordedBy,
-      actorName: vitals.recordedByName || 'Unknown',
-      actorRole: vitals.recordedByRole || 'nurse',
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
       actionType: 'delete',
       resourceType: 'vitals',
       resourceId: id,
       patientMrn: vitals.patient?.mrn || undefined,
     });
 
-    return NextResponse.json({ success: true, message: 'Vitals record deleted' });
+    // Log PHI access
+    await logPHIAccess(user, 'DELETE', 'vitals', id);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Vitals record deleted',
+      meta: {
+        deletedBy: user.employeeId,
+        deletedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error deleting vitals:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to delete vitals record' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Log PHI access for HIPAA compliance
+ */
+async function logPHIAccess(
+  user: AuthenticatedUser,
+  action: string,
+  resource: string,
+  resourceId: string | number,
+  details?: any
+): Promise<void> {
+  try {
+    await db.aIInteraction.create({
+      data: {
+        interactionType: 'phi_access',
+        prompt: `${action} ${resource}`,
+        response: JSON.stringify({
+          resourceId,
+          details,
+          userRole: user.role,
+        }),
+        humanReviewed: false,
+        modelUsed: 'audit-system',
+        patientId: typeof resourceId === 'string' ? resourceId : null,
+      },
+    });
+
+    console.log(`[PHI AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Action: ${action} | Resource: ${resource}:${resourceId}`);
+  } catch (error) {
+    console.error('Failed to log PHI access:', error);
   }
 }

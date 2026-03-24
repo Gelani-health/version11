@@ -1,21 +1,49 @@
 /**
- * Vitals API
- * CRUD operations for vital signs with validation and status calculation
+ * Vitals API - HIPAA Compliant
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: vitals:read
+ * - POST: vitals:write
+ * 
+ * Audit trail is maintained for all PHI access.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit-service';
-import { 
-  validateVitals, 
-  calculateVitalsStatuses, 
+import { authenticateRequest, AuthenticatedUser, checkPermission } from '@/lib/auth-middleware';
+import {
+  validateVitals,
+  calculateVitalsStatuses,
   calculateBMI,
-  type VitalsInput 
+  type VitalsInput
 } from '@/lib/vitals-utils';
 
-// GET /api/vitals - List vitals
+/**
+ * GET /api/vitals - List vitals
+ * Permission: vitals:read
+ */
 export async function GET(request: NextRequest) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'vitals:read')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: vitals:read required" },
+        { status: 403 }
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
     const encounterId = searchParams.get('encounterId');
@@ -52,7 +80,17 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: vitals });
+    // Log PHI access
+    await logPHIAccess(user, 'READ', 'vitals', vitals.length);
+
+    return NextResponse.json({
+      success: true,
+      data: vitals,
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error fetching vitals:', error);
     return NextResponse.json(
@@ -62,9 +100,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/vitals - Create vitals record
+/**
+ * POST /api/vitals - Create vitals record
+ * Permission: vitals:write
+ */
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate request
+    const authResult = await authenticateRequest(request);
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || "Unauthorized" },
+        { status: authResult.status || 401 }
+      );
+    }
+
+    const user = authResult.user;
+
+    // Check permissions
+    if (!checkPermission(user, 'vitals:write')) {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions: vitals:write required" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const {
       patientId,
@@ -85,16 +145,13 @@ export async function POST(request: NextRequest) {
       glucoseType,
       painScore,
       consciousnessLevel,
-      recordedBy,
-      recordedByName,
-      recordedByRole,
       notes,
     } = body;
 
     // Validate required fields
-    if (!patientId || !recordedBy) {
+    if (!patientId) {
       return NextResponse.json(
-        { success: false, error: 'Patient ID and recordedBy are required' },
+        { success: false, error: 'Patient ID is required' },
         { status: 400 }
       );
     }
@@ -133,7 +190,7 @@ export async function POST(request: NextRequest) {
     // Calculate BMI if weight and height provided
     const bmi = calculateBMI(weight, height, weightUnit, heightUnit);
 
-    // Create vitals record
+    // Create vitals record with authenticated user
     const vitals = await db.vitalSigns.create({
       data: {
         patientId,
@@ -161,9 +218,9 @@ export async function POST(request: NextRequest) {
         spo2Status: statuses.spo2Status,
         tempStatus: statuses.tempStatus,
         glucoseStatus: statuses.glucoseStatus,
-        recordedBy,
-        recordedByName,
-        recordedByRole,
+        recordedBy: user.employeeId,
+        recordedByName: user.name,
+        recordedByRole: user.role,
         notes,
       },
     });
@@ -176,21 +233,63 @@ export async function POST(request: NextRequest) {
 
     // Create audit log
     await createAuditLog({
-      actorId: recordedBy,
-      actorName: recordedByName || 'Unknown',
-      actorRole: recordedByRole || 'nurse',
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
       actionType: 'create',
       resourceType: 'vitals',
       resourceId: vitals.id,
       patientMrn: patient?.mrn || undefined,
     });
 
-    return NextResponse.json({ success: true, data: vitals }, { status: 201 });
+    // Log PHI access
+    await logPHIAccess(user, 'CREATE', 'vitals', vitals.id, { patientId });
+
+    return NextResponse.json({
+      success: true,
+      data: vitals,
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating vitals:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to create vitals record' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Log PHI access for HIPAA compliance
+ */
+async function logPHIAccess(
+  user: AuthenticatedUser,
+  action: string,
+  resource: string,
+  resourceId: string | number,
+  details?: any
+): Promise<void> {
+  try {
+    await db.aIInteraction.create({
+      data: {
+        interactionType: 'phi_access',
+        prompt: `${action} ${resource}`,
+        response: JSON.stringify({
+          resourceId,
+          details,
+          userRole: user.role,
+        }),
+        humanReviewed: false,
+        modelUsed: 'audit-system',
+        patientId: typeof resourceId === 'string' ? resourceId : null,
+      },
+    });
+
+    console.log(`[PHI AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Action: ${action} | Resource: ${resource}:${resourceId}`);
+  } catch (error) {
+    console.error('Failed to log PHI access:', error);
   }
 }

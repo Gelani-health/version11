@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authenticateRequest } from '@/lib/auth-middleware';
 
 // MedASR Service Configuration
 const MEDASR_SERVICE_URL = "http://localhost:3033";
 
 export async function POST(request: NextRequest) {
+  // Authentication check
+  const authResult = await authenticateRequest(request);
+  if (!authResult.authenticated) {
+    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+  }
+  const user = authResult.user!;
+  if (!user.permissions.includes('ai:use')) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     

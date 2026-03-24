@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 
-// Integration API - Manage Bahmni HIS and Odoo ERP connections
-// Get all integrations status
-export async function GET(request: NextRequest) {
+/**
+ * Integration API - Manage Bahmni HIS and Odoo ERP connections
+ * GET - Get all integrations status
+ * Permission: employee:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     // Get Bahmni integration config
     const bahmniConfig = await db.bahmniIntegration.findFirst();
@@ -50,10 +54,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:read'] });
 
-// Update integration configuration
-export async function POST(request: NextRequest) {
+/**
+ * POST - Update integration configuration
+ * Permission: employee:write
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const { integrationType, config } = body;
@@ -144,10 +151,13 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });
 
-// Delete/disconnect integration
-export async function DELETE(request: NextRequest) {
+/**
+ * DELETE - Delete/disconnect integration
+ * Permission: employee:write
+ */
+export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const { searchParams } = new URL(request.url);
     const integrationType = searchParams.get("type");
@@ -183,4 +193,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['employee:write'] });

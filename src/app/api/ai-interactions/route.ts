@@ -1,10 +1,25 @@
+/**
+ * AI Interactions API - HIPAA Compliant
+ * 
+ * Save and retrieve AI interactions for patient data consistency
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: audit_log:read
+ * - POST: ai:use
+ * 
+ * Audit trail is maintained for all operations.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
+import { createAuditLog } from '@/lib/audit-service';
 
-// AI Interactions API - Save and retrieve AI interactions for patient data consistency
-
-// POST: Save a new AI interaction
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/ai-interactions - Save a new AI interaction
+ * Permission: ai:use
+ */
+export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const body = await request.json();
     const {
@@ -46,11 +61,31 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Log AI interaction for audit
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'create',
+      resourceType: 'soap_note',
+      resourceId: interaction.id,
+      newValue: JSON.stringify({
+        patientId,
+        consultationId,
+        interactionType,
+        modelUsed: modelUsed || 'healthcare-ai',
+      }),
+    });
+
     return NextResponse.json({
       success: true,
       data: {
         id: interaction.id,
         createdAt: interaction.createdAt,
+      },
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
       },
     });
   } catch (error) {
@@ -60,10 +95,13 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['ai:use'] });
 
-// GET: Retrieve AI interactions for a patient
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/ai-interactions - Retrieve AI interactions for a patient
+ * Permission: audit_log:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
@@ -114,6 +152,16 @@ export async function GET(request: NextRequest) {
     // Get total count
     const total = await db.aIInteraction.count({ where });
 
+    // Log access to AI interactions
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'audit_log',
+      resourceId: patientId || consultationId || undefined,
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -125,6 +173,10 @@ export async function GET(request: NextRequest) {
           hasMore: offset + limit < total,
         },
       },
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error('Get AI interactions error:', error);
@@ -133,4 +185,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['audit_log:read'] });

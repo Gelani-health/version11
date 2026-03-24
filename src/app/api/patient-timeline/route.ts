@@ -1,7 +1,18 @@
+/**
+ * Patient Timeline API - HIPAA Compliant
+ * 
+ * Comprehensive patient history with AI interactions, consultations, and more
+ * 
+ * All operations require authentication and appropriate permissions:
+ * - GET: patient:read
+ * 
+ * Audit trail is maintained for all PHI access.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-
-// Patient Timeline API - Comprehensive patient history with AI interactions, consultations, and more
+import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
+import { createAuditLog } from '@/lib/audit-service';
 
 interface TimelineEvent {
   id: string;
@@ -14,8 +25,11 @@ interface TimelineEvent {
   consultationId?: string;
 }
 
-// GET: Get comprehensive patient timeline
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/patient-timeline - Get comprehensive patient timeline
+ * Permission: patient:read
+ */
+export const GET = withAuth(async (request: NextRequest, user: AuthenticatedUser) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
@@ -300,6 +314,17 @@ export async function GET(request: NextRequest) {
       voiceNotes: await db.voiceNote.count({ where: { patientId } }),
     };
 
+    // Log PHI access for HIPAA compliance
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'patient',
+      resourceId: patientId,
+      patientMrn: patient?.mrn || undefined,
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -312,6 +337,10 @@ export async function GET(request: NextRequest) {
           to: toDate || null,
         },
       },
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error('Patient timeline error:', error);
@@ -320,4 +349,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { requiredPermissions: ['patient:read'] });

@@ -144,21 +144,33 @@ async function main() {
   // Create vital signs for first patient
   const existingVitals = await prisma.vitalSigns.count();
   if (existingVitals === 0) {
-    await prisma.vitalSigns.create({
-      data: {
-        patientId: patients[0].id,
-        temperature: 36.8,
-        bloodPressureSystolic: 128,
-        bloodPressureDiastolic: 78,
-        heartRate: 72,
-        respiratoryRate: 16,
-        oxygenSaturation: 98,
-        weight: 82,
-        height: 175,
-        bmi: 26.8,
-      },
+    // Get the first employee for recording vitals
+    const employee = await prisma.employee.findFirst({
+      where: { employeeId: 'NUR-001' }
     });
-    console.log('Created vital signs record');
+    
+    if (employee) {
+      await prisma.vitalSigns.create({
+        data: {
+          patientId: patients[0].id,
+          temperature: 36.8,
+          bloodPressureSystolic: 128,
+          bloodPressureDiastolic: 78,
+          heartRate: 72,
+          respiratoryRate: 16,
+          oxygenSaturation: 98,
+          weight: 82,
+          height: 175,
+          bmi: 26.8,
+          recordedBy: employee.employeeId,
+          recordedByName: `${employee.firstName} ${employee.lastName}`,
+          recordedByRole: employee.role,
+        },
+      });
+      console.log('Created vital signs record');
+    } else {
+      console.log('No employee found, skipping vital signs');
+    }
   }
 
   console.log('Database seeded successfully!');

@@ -69,7 +69,7 @@ import { RoleBasedAccessControl } from "@/components/role-based-access-control";
 import { OfflineSupport } from "@/components/offline-support";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VoiceInputButton } from "@/components/voice-input-button";
-import { RAGHealthcareAssistant } from "@/components/rag-healthcare-assistant";
+import { ClinicalIntelligence } from "@/components/clinical-intelligence";
 import { HealthcareAIFeatures } from "@/components/healthcare-ai-features";
 import { LLMIntegrationsSettings } from "@/components/llm/llm-integrations-settings";
 import { AIModelFooter } from "@/components/ai-model-footer";
@@ -137,10 +137,8 @@ const allSidebarItems = [
   { id: "smart-identity", label: "Smart Identity", icon: Shield, permission: 'patient:read' as Permission },
   { id: "patients", label: "Patients", icon: Users, permission: 'patient:read' as Permission },
   { id: "consultations", label: "Consultations", icon: Stethoscope, permission: 'clinical_order:read' as Permission },
-  { id: "medical-rag", label: "Medical RAG", icon: Database, permission: 'ai:use' as Permission },
-  { id: "rag-healthcare", label: "RAG Healthcare", icon: Database, permission: 'ai:use' as Permission },
-  { id: "healthcare-ai", label: "Healthcare AI", icon: Brain, permission: 'ai:use' as Permission },
-  { id: "clinical-support", label: "Clinical Support", icon: Activity, permission: 'ai:use' as Permission },
+  { id: "clinical-intelligence", label: "Clinical Intelligence", icon: Brain, permission: 'ai:use' as Permission },
+  { id: "healthcare-ai", label: "Healthcare AI", icon: Sparkles, permission: 'ai:use' as Permission },
   { id: "documentation", label: "Documentation", icon: FileText, permission: 'soap_note:read' as Permission },
   { id: "drugs", label: "Drug Safety", icon: Pill, permission: 'prescription:read' as Permission },
   { id: "imaging", label: "Imaging", icon: ImageIcon, permission: 'imaging:read' as Permission },
@@ -206,16 +204,12 @@ export default function AIHealthcareDashboard() {
         return <PatientManagement onNavigate={handleNavigate} />;
       case "consultations":
         return <ClinicalWorkflowDashboard preselectedPatientId={selectedPatientId} />;
-      case "medical-rag":
-        return <MedicalRAGDiagnostic preselectedPatientId={selectedPatientId} />;
-      case "rag-healthcare":
-        return <RAGHealthcareAssistant preselectedPatientId={selectedPatientId} />;
+      case "clinical-intelligence":
+        return <ClinicalIntelligence preselectedPatientId={selectedPatientId} />;
       case "healthcare-ai":
         return <HealthcareAIFeatures />;
       case "advanced-ai":
         return <AdvancedAIIntelligence preselectedPatientId={selectedPatientId} />;
-      case "clinical-support":
-        return <ClinicalDecisionSupport preselectedPatientId={selectedPatientId} />;
       case "rl-dashboard":
         return <RLDashboard />;
       case "documentation":
@@ -456,7 +450,7 @@ export default function AIHealthcareDashboard() {
 function DashboardHome({ onNavigate }: { onNavigate: (id: string) => void }) {
   const quickActions = [
     { id: "patients", label: "New Patient", icon: Users, color: "from-blue-500 to-cyan-500" },
-    { id: "clinical-support", label: "Clinical AI", icon: Brain, color: "from-purple-500 to-pink-500" },
+    { id: "clinical-intelligence", label: "Clinical AI", icon: Brain, color: "from-purple-500 to-pink-500" },
     { id: "documentation", label: "Write Notes", icon: FileText, color: "from-amber-500 to-orange-500" },
     { id: "drugs", label: "Check Drugs", icon: Pill, color: "from-rose-500 to-red-500" },
   ];

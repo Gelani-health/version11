@@ -772,9 +772,11 @@ export function ConsultationModule({ preselectedPatientId }: ConsultationModuleP
                                       : "bg-slate-100"
                                   }`}
                                 >
-                                  <ReactMarkdown className="text-sm prose prose-sm max-w-none">
-                                    {msg.content}
-                                  </ReactMarkdown>
+                                  <div className="text-sm prose prose-sm max-w-none">
+                                    <ReactMarkdown>
+                                      {msg.content}
+                                    </ReactMarkdown>
+                                  </div>
                                 </div>
                               </div>
                             ))}

@@ -25,10 +25,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 
@@ -159,10 +159,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 
@@ -254,10 +254,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 

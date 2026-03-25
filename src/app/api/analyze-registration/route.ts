@@ -60,7 +60,7 @@ Be comprehensive and list every single field you can see on this registration fo
             { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
           ]
         }
-      ],
+      ] as any, // Cast to any for vision API support
     });
 
     const result = response.choices?.[0]?.message?.content;

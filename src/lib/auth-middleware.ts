@@ -248,15 +248,16 @@ export function checkAnyPermission(user: AuthenticatedUser, permissions: Permiss
 
 /**
  * Higher-order function to wrap API handlers with authentication
+ * Supports both regular routes and dynamic routes with params
  */
 export function withAuth(
-  handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>,
+  handler: (request: NextRequest, user: AuthenticatedUser, context?: any) => Promise<NextResponse>,
   options?: {
     requiredPermissions?: Permission[];
     requireAnyPermission?: Permission[];
   }
 ) {
-  return async (request: NextRequest): Promise<NextResponse> => {
+  return async (request: NextRequest, context?: any): Promise<NextResponse> => {
     const authResult = await authenticateRequest(request);
 
     if (!authResult.authenticated) {
@@ -307,7 +308,7 @@ export function withAuth(
     // Log the authenticated request for audit
     await logAuthenticatedRequest(request, user);
 
-    return handler(request, user);
+    return handler(request, user, context);
   };
 }
 

@@ -294,8 +294,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating smart patient identity:', error);
     if (error instanceof z.ZodError) {
+      const zodError = error as unknown as { errors: Array<{ message: string; path: (string | number)[] }> };
       return NextResponse.json(
-        { success: false, error: 'Validation error', details: error.errors },
+        { success: false, error: 'Validation error', details: zodError.errors },
         { status: 400 }
       );
     }

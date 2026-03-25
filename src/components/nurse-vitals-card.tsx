@@ -279,12 +279,18 @@ export function NurseVitalsCard({
   });
 
   // Validation states
-  const [validations, setValidations] = useState({
-    bp: { isValid: true, status: "normal" as const, message: "" },
-    hr: { isValid: true, status: "normal" as const, message: "" },
-    rr: { isValid: true, status: "normal" as const, message: "" },
-    spo2: { isValid: true, status: "normal" as const, message: "" },
-    temp: { isValid: true, status: "normal" as const, message: "" },
+  const [validations, setValidations] = useState<{
+    bp: { isValid: boolean; status: "normal" | "warning" | "critical"; message?: string };
+    hr: { isValid: boolean; status: "normal" | "warning" | "critical"; message?: string };
+    rr: { isValid: boolean; status: "normal" | "warning" | "critical"; message?: string };
+    spo2: { isValid: boolean; status: "normal" | "warning" | "critical"; message?: string };
+    temp: { isValid: boolean; status: "normal" | "warning" | "critical"; message?: string };
+  }>({
+    bp: { isValid: true, status: "normal", message: "" },
+    hr: { isValid: true, status: "normal", message: "" },
+    rr: { isValid: true, status: "normal", message: "" },
+    spo2: { isValid: true, status: "normal", message: "" },
+    temp: { isValid: true, status: "normal", message: "" },
   });
 
   // Calculate BMI

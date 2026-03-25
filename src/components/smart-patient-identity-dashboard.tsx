@@ -503,7 +503,7 @@ export function SmartPatientIdentityDashboard() {
           ...newPatient,
           allergies: allergies.length > 0 ? JSON.stringify(allergies) : null,
           chronicConditions: chronicConditions.length > 0 ? JSON.stringify(chronicConditions) : null,
-          allergyCritical: allergies.some(a => a.severity === 'life-threatening' || a.severity === 'severe'),
+          allergyCritical: allergies.some(a => (a as any).severity === 'life-threatening' || (a as any).severity === 'severe'),
           dateOfBirth: new Date(newPatient.dateOfBirth).toISOString(),
           estimatedDueDate: newPatient.estimatedDueDate ? new Date(newPatient.estimatedDueDate).toISOString() : null
         })
@@ -575,7 +575,7 @@ export function SmartPatientIdentityDashboard() {
             <PatientRegistrationCard
               open={isAddDialogOpen}
               onOpenChange={setIsAddDialogOpen}
-              onSubmit={async (formData: PatientFormData) => {
+              onSubmit={async (formData: any) => {
                 try {
                   setIsSaving(true);
                   

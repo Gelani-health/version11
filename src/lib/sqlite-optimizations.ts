@@ -531,10 +531,11 @@ export function initializeDatabase(dbPath: string): boolean {
 
 /**
  * Create a Prisma client with SQLite optimizations
+ * Note: Retry logic should be applied at the application level using withRetry()
  */
 export function createOptimizedPrismaClient(options: {
   url: string
-  log?: ('query' | 'info' | 'warn' | error')[]
+  log?: ('query' | 'info' | 'warn' | 'error')[]
 } = { url: process.env.DATABASE_URL || 'file:./data/healthcare.db' }): PrismaClient {
   const { url, log = ['warn', 'error'] } = options
   
@@ -545,6 +546,7 @@ export function createOptimizedPrismaClient(options: {
   initializeDatabase(dbPath)
   
   // Create Prisma client with custom configuration
+  // Note: Prisma 5.x deprecated $use middleware. Use withRetry() wrapper for retry logic.
   const client = new PrismaClient({
     log,
     datasources: {
@@ -554,53 +556,8 @@ export function createOptimizedPrismaClient(options: {
     }
   })
   
-  // Add middleware for automatic retries
-  client.$use(async (params, next) => {
-    const maxAttempts = SQLITE_CONFIG.maxRetries + 1
-    let lastError: Error | null = null
-    
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const result = await next(params)
-        
-        // Create backup on successful write operations (optional)
-        if (
-          SQLITE_CONFIG.backupOnWrite &&
-          ['create', 'update', 'delete', 'upsert'].includes(params.action) &&
-          attempt === 0 // Only on first successful attempt
-        ) {
-          // Defer backup to avoid blocking
-          setImmediate(() => {
-            try {
-              createBackup(dbPath, 'write')
-            } catch {
-              // Backup failure should not affect the operation
-            }
-          })
-        }
-        
-        return result
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error))
-        
-        if (!isRetryableError(error)) {
-          throw error
-        }
-        
-        if (attempt === maxAttempts - 1) {
-          console.error(`[SQLite] Prisma operation failed after ${maxAttempts} attempts`)
-          throw error
-        }
-        
-        const delay = calculateDelay(attempt, SQLITE_CONFIG.baseDelayMs, SQLITE_CONFIG.maxDelayMs)
-        console.warn(`[SQLite] Retrying Prisma operation (${params.model}.${params.action}) after ${delay}ms`)
-        
-        await sleep(delay)
-      }
-    }
-    
-    throw lastError
-  })
+  // Store dbPath for backup functionality
+  ;(client as any)._dbPath = dbPath
   
   return client
 }

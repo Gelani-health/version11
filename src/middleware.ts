@@ -9,11 +9,29 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { 
-  authenticateRequest, 
-  isPublicEndpoint, 
-  AuthenticatedUser 
-} from './lib/auth-middleware';
+
+// Force Node.js runtime for middleware to access database
+// This is required for database-backed authentication
+export const runtime = 'nodejs';
+
+// Dynamic import for database access (only loaded when needed)
+let _db: typeof import('./lib/db').db | null = null;
+async function getDb() {
+  if (!_db) {
+    const { db } = await import('./lib/db');
+    _db = db;
+  }
+  return _db;
+}
+
+// Dynamic import for auth functions
+let _auth: typeof import('./lib/auth-middleware') | null = null;
+async function getAuth() {
+  if (!_auth) {
+    _auth = await import('./lib/auth-middleware');
+  }
+  return _auth;
+}
 
 // Routes that require specific permissions
 const ROUTE_PERMISSIONS: Record<string, { method: string; permission: string }[]> = {
@@ -84,8 +102,11 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Get auth module dynamically
+  const auth = await getAuth();
+
   // Skip authentication for public endpoints
-  if (isPublicEndpoint(pathname)) {
+  if (auth.isPublicEndpoint(pathname)) {
     return response;
   }
 
@@ -103,7 +124,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Authenticate the request
-  const authResult = await authenticateRequest(request);
+  const authResult = await auth.authenticateRequest(request);
 
   if (!authResult.authenticated) {
     // Log failed authentication attempt

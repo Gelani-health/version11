@@ -38,7 +38,7 @@ export interface SearchResult {
 const embeddingCache = new Map<string, number[]>();
 
 // Get Z.ai SDK instance
-function getZaiClient() {
+async function getZaiClient() {
   const apiKey = process.env.ZAI_API_KEY;
   const baseUrl = process.env.ZAI_BASE_URL || 'https://api.z.ai/api/paas/v4';
   
@@ -46,7 +46,7 @@ function getZaiClient() {
     throw new Error('ZAI_API_KEY environment variable is required for embeddings');
   }
   
-  return new ZAI({ apiKey, baseUrl });
+  return ZAI.create();
 }
 
 /**

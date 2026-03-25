@@ -125,7 +125,6 @@ export const countriesWithCities: Record<string, string[]> = {
   "Sudan": ["Khartoum", "Omdurman", "Port Sudan", "Kassala", "El Obeid", "Nyala", "Al-Fashir", "Kosti", "Wad Madani", "Al-Qadarif", "Kordofan", "Juba", "Malakal", "Wau", "Dongola", "Atbara", "Kusti", "Singa", "Kadugli", "Geneina"],
   "Algeria": ["Algiers", "Oran", "Constantine", "Annaba", "Blida", "Batna", "Djelfa", "Sétif", "Sidi Bel Abbès", "Biskra", "Tébessa", "Tiaret", "Béjaïa", "Tlemcen", "Ouargla", "Skikda", "Bordj Bou Arréridj", "Mostaganem", "Ghardaia", "Mascara"],
   "Tunisia": ["Tunis", "Sfax", "Sousse", "Kairouan", "Gabès", "Bizerte", "Ariana", "Gafsa", "Monastir", "Ben Arous", "Kasserine", "Medenine", "Nabeul", "Tataouine", "Mahdia", "Sidi Bouzid", "Jendouba", "Tozeur", "Zaghouan", "Kef"],
-  "Morocco": ["Casablanca", "Rabat", "Marrakech", "Fes", "Tangier", "Agadir", "Meknes", "Oujda", "Kenitra", "Tetouan", "Safi", "El Jadida", "Nador", "Beni Mellal", "Khouribga", "Settat", "Taza", "Mohammedia", "Ouarzazate", "Berkane"],
   "Zimbabwe": ["Harare", "Bulawayo", "Chitungwiza", "Mutare", "Epworth", "Gweru", "Kwekwe", "Kadoma", "Masvingo", "Chinhoyi", "Marondera", "Ruwa", "Bindura", "Zvishavane", "Victoria Falls", "Hwange", "Kariba", "Karoi", "Redcliff", "Rusape"],
   "Zambia": ["Lusaka", "Ndola", "Kitwe", "Kabwe", "Chingola", "Livingstone", "Luanshya", "Mufulira", "Kasama", "Chipata", "Mazabuka", "Kapiri Mposhi", "Chililabombwe", "Kalulushi", "Choma", "Mongu", "Solwezi", "Sesheke", "Mumbwa", "Monze"],
   "Afghanistan": ["Kabul", "Kandahar", "Herat", "Mazar-i-Sharif", "Jalalabad", "Kunduz", "Ghazni", "Baghlan", "Bamyan", "Khost", "Puli Khumri", "Lashkar Gah", "Talogan", "Sar-e Pol", "Farah", "Fayzabad", "Zaranj", "Maymana", "Sheberghan", "Gardez"],
@@ -989,14 +988,6 @@ export const addressFormats: Record<string, AddressFormatConfig> = {
       { name: "postalCode", label: "Postal Code", placeholder: "Enter postal code", type: "text", required: true },
     ],
     regionLabel: "State",
-    postalLabel: "Postal Code"
-  },
-  // Singapore format
-  "Singapore": {
-    fields: [
-      { name: "postalCode", label: "Postal Code", placeholder: "Enter postal code", type: "text", required: true },
-    ],
-    regionLabel: "",
     postalLabel: "Postal Code"
   },
 };

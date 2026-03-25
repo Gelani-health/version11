@@ -3,14 +3,15 @@
  * 
  * Features:
  * - WAL mode for better concurrency
- * - Automatic retry on SQLITE_BUSY errors
+ * - Automatic retry on SQLITE_BUSY errors (via wrapper functions)
  * - Backup-on-write for crash safety
  * - Connection pooling optimization
  * - Health monitoring
+ * 
+ * Edge Runtime Compatible: No Node.js-specific APIs at module level
  */
 
 import { 
-  createOptimizedPrismaClient, 
   initializeDatabase,
   getDatabaseHealth,
   createBackup,
@@ -28,6 +29,7 @@ import { PrismaClient } from '@prisma/client'
 declare global {
   var prismaGlobal: PrismaClient | undefined
   var dbInitialized: boolean | undefined
+  var writeCounter: number | undefined
 }
 
 // ============================================================================
@@ -47,11 +49,19 @@ function resolveDatabaseUrl(): string {
       './db/custom.db'
     ]
     
+    // Use dynamic require for fs to be Edge Runtime compatible
     for (const path of possiblePaths) {
-      const { existsSync } = require('fs')
-      if (existsSync(path)) {
-        dbUrl = `file:${path}`
-        console.log(`[DB] Using database: ${path}`)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { existsSync } = require('fs')
+        if (existsSync(path)) {
+          dbUrl = `file:${path}`
+          console.log(`[DB] Using database: ${path}`)
+          break
+        }
+      } catch {
+        // fs not available (Edge Runtime), use default
+        dbUrl = 'file:./data/healthcare.db'
         break
       }
     }
@@ -91,12 +101,14 @@ function createDatabaseClient(): PrismaClient {
   }
   
   // Determine logging level based on environment
+  // Production: Only warnings and errors (NO query logging)
+  // Development: Query, warn, and error logging
   const logLevel: ('query' | 'info' | 'warn' | 'error')[] = 
     process.env.NODE_ENV === 'development'
       ? ['query', 'warn', 'error']
       : ['warn', 'error']
   
-  // Create optimized Prisma client
+  // Create Prisma client without deprecated middleware
   const client = new PrismaClient({
     log: logLevel,
     datasources: {
@@ -106,80 +118,8 @@ function createDatabaseClient(): PrismaClient {
     }
   })
   
-  // Add retry middleware
-  client.$use(async (params, next) => {
-    const maxAttempts = 6 // 1 initial + 5 retries
-    let lastError: Error | null = null
-    
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const result = await next(params)
-        return result
-      } catch (error: unknown) {
-        lastError = error instanceof Error ? error : new Error(String(error))
-        const errorMessage = lastError.message.toLowerCase()
-        
-        // Check if error is retryable (SQLite busy/locked errors)
-        const isRetryable = 
-          errorMessage.includes('sqlite_busy') ||
-          errorMessage.includes('database is locked') ||
-          errorMessage.includes('database table is locked') ||
-          errorMessage.includes('cannot start a transaction') ||
-          errorMessage.includes('disk i/o error')
-        
-        if (!isRetryable) {
-          throw error
-        }
-        
-        if (attempt === maxAttempts - 1) {
-          console.error(`[DB] Operation failed after ${maxAttempts} attempts:`, lastError.message)
-          throw error
-        }
-        
-        // Exponential backoff with jitter
-        const baseDelay = 100
-        const maxDelay = 5000
-        const delay = Math.min(baseDelay * Math.pow(2, attempt) + Math.random() * 100, maxDelay)
-        
-        console.warn(`[DB] Retrying ${params.model}.${params.action} (${attempt + 1}/${maxAttempts}) after ${Math.round(delay)}ms`)
-        
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-    }
-    
-    throw lastError
-  })
-  
-  // Add backup-on-write middleware (for write operations)
-  if (process.env.BACKUP_ON_WRITE !== 'false') {
-    client.$use(async (params, next) => {
-      const result = await next(params)
-      
-      // Only backup after successful write operations
-      if (['create', 'update', 'delete', 'upsert'].includes(params.action)) {
-        // Defer backup to not block the response
-        setImmediate(() => {
-          try {
-            const { existsSync } = require('fs')
-            if (existsSync(dbPath)) {
-              // Create backup every 50 writes (approximately)
-              // This reduces I/O while still maintaining safety
-              const writeCounter = (globalThis as any).writeCounter || 0
-              ;(globalThis as any).writeCounter = writeCounter + 1
-              
-              if (writeCounter % 50 === 0) {
-                createBackup(dbPath, 'write')
-              }
-            }
-          } catch {
-            // Backup failure should not affect the operation
-          }
-        })
-      }
-      
-      return result
-    })
-  }
+  // Store dbPath for backup functionality
+  ;(client as any)._dbPath = dbPath
   
   return client
 }
@@ -199,26 +139,92 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ============================================================================
-// Graceful Shutdown
+// Retry Wrapper for Database Operations
 // ============================================================================
 
-async function gracefulShutdown(signal: string) {
-  console.log(`[DB] ${signal} received, disconnecting...`)
+/**
+ * Execute a database operation with automatic retry on SQLITE_BUSY errors
+ * Use this for critical write operations that need retry logic
+ */
+export async function withDbRetry<T>(
+  operation: () => Promise<T>,
+  options?: {
+    maxRetries?: number
+    baseDelayMs?: number
+    maxDelayMs?: number
+  }
+): Promise<T> {
+  const maxAttempts = options?.maxRetries ?? 6
+  const baseDelay = options?.baseDelayMs ?? 100
+  const maxDelay = options?.maxDelayMs ?? 5000
   
-  try {
-    await db.$disconnect()
-    console.log('[DB] Disconnected successfully')
-  } catch (error) {
-    console.error('[DB] Error during disconnect:', error)
+  let lastError: Error | null = null
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await operation()
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      const errorMessage = lastError.message.toLowerCase()
+      
+      // Check if error is retryable (SQLite busy/locked errors)
+      const isRetryable = 
+        errorMessage.includes('sqlite_busy') ||
+        errorMessage.includes('database is locked') ||
+        errorMessage.includes('database table is locked') ||
+        errorMessage.includes('cannot start a transaction') ||
+        errorMessage.includes('disk i/o error')
+      
+      if (!isRetryable) {
+        throw error
+      }
+      
+      if (attempt === maxAttempts - 1) {
+        console.error(`[DB] Operation failed after ${maxAttempts} attempts:`, lastError.message)
+        throw error
+      }
+      
+      // Exponential backoff with jitter
+      const delay = Math.min(baseDelay * Math.pow(2, attempt) + Math.random() * 100, maxDelay)
+      
+      console.warn(`[DB] Retrying operation (${attempt + 1}/${maxAttempts}) after ${Math.round(delay)}ms`)
+      
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
   }
   
-  process.exit(0)
+  throw lastError
 }
 
-// Register shutdown handlers
-if (typeof process !== 'undefined') {
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+// ============================================================================
+// Backup on Write (Optional)
+// ============================================================================
+
+/**
+ * Create backup after write operations (call manually when needed)
+ */
+export function backupAfterWrite(): void {
+  const dbPath = (db as any)._dbPath
+  if (!dbPath) return
+  
+  // Create backup every 50 writes (approximately)
+  const writeCounter = globalThis.writeCounter || 0
+  globalThis.writeCounter = writeCounter + 1
+  
+  if (writeCounter % 50 === 0 && process.env.BACKUP_ON_WRITE !== 'false') {
+    // Use setTimeout for Edge Runtime compatibility
+    setTimeout(() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { existsSync } = require('fs')
+        if (existsSync(dbPath)) {
+          createBackup(dbPath, 'write')
+        }
+      } catch {
+        // Backup failure should not affect the operation
+      }
+    }, 0)
+  }
 }
 
 // ============================================================================

@@ -455,11 +455,11 @@ export function BahmniIntegration() {
           <AlertDescription>
             {syncResult.success && syncResult.data && (
               <div className="text-sm">
-                <p>Records synced: {syncResult.data.recordsSynced}</p>
-                <p>Duration: {syncResult.data.duration}ms</p>
+                <p>Records synced: {(syncResult.data as { recordsSynced: number; duration: number }).recordsSynced}</p>
+                <p>Duration: {(syncResult.data as { recordsSynced: number; duration: number }).duration}ms</p>
               </div>
             )}
-            {syncResult.error && <p className="text-xs font-mono">{syncResult.error}</p>}
+            {syncResult.error && <p className="text-xs font-mono">{String(syncResult.error)}</p>}
           </AlertDescription>
         </Alert>
       )}

@@ -194,7 +194,6 @@ export async function POST(request: NextRequest) {
       input: preparedText,
       voice: voice,
       speed: speed,
-      volume: volume,
       response_format: 'wav',
       stream: false,
     });

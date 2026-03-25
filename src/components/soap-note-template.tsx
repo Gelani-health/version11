@@ -106,7 +106,7 @@ interface NurseTask {
   priority: "routine" | "urgent" | "stat";
 }
 
-interface SOAPNoteData {
+export interface SOAPNoteData {
   // SUBJECTIVE
   chiefComplaint: string;
   hpiOnset: string;

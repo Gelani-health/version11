@@ -41,8 +41,11 @@ next-env.d.ts
 # Database
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 db/*.db
 db/*.db-journal
+db/backups/
 
 # IDE
 .vscode/
@@ -69,13 +72,17 @@ prisma/*.db-journal
 
 # Uploaded files
 uploads/
+upload/
 
 # Logs
 logs/
-*.log
+/tmp/
 
 # Mini services
 mini-services/*/node_modules/
+mini-services/venv/
+mini-services/*/venv/
+mini-services/*/__pycache__/
 
 # Build outputs
 .standalone/
@@ -84,10 +91,10 @@ mini-services/*/node_modules/
 test-results/
 playwright-report/
 
-# Download folder (if any generated files)
+# Download folder
 download/
 
-# Skills documentation (SDK files)
+# Skills documentation
 skills/
 
 # Examples
@@ -96,7 +103,7 @@ examples/
 # Work logs
 worklog.md
 
-# Caddyfile (server config)
+# Caddyfile
 Caddyfile
 
 # Python
@@ -108,39 +115,3 @@ __pycache__/
 venv/
 env/
 *.egg-info/
-dist/
-build/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-*.egg-info/
-dist/
-build/
-
-# Logs
-*.log
-/tmp/
-
-# Database
-*.db
-*.db-journal
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db

@@ -469,7 +469,7 @@ export function apiToPatientForm(patient: PatientRecord): PatientFormData {
     religion: patient.religion || '',
     
     // Identification - use idType and idNumber
-    idType: patient.nationalIdType || 'national_id',
+    idType: (patient as any).nationalIdType || 'national_id',
     idNumber: patient.nationalHealthId || '',
 
     phone: patient.phone || '',

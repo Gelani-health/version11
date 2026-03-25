@@ -104,13 +104,6 @@ interface SpeechRecognition extends EventTarget {
   stop(): void;
 }
 
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
-  }
-}
-
 // ============================================
 // HELPER: Check Web Speech API Support
 // ============================================
@@ -222,7 +215,7 @@ export function VoiceInputButton({
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
       // Create recognition instance
-      const recognition = new SpeechRecognition();
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)() as any;
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = language;
@@ -358,7 +351,7 @@ export function VoiceInputButton({
         setAudioLevel(0);
       };
 
-      recognitionRef.current = recognition;
+      recognitionRef.current = recognition as any;
       recognition.start();
 
     } catch (err) {

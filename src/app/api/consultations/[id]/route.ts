@@ -23,10 +23,10 @@ export async function GET(
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 
@@ -96,10 +96,10 @@ export async function PUT(
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 
@@ -168,10 +168,10 @@ export async function PATCH(
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 
@@ -240,10 +240,10 @@ export async function DELETE(
   try {
     // Authenticate request
     const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
+    if (!authResult.authenticated || !authResult.user) {
       return NextResponse.json(
         { success: false, error: authResult.error || "Unauthorized" },
-        { status: authResult.status || 401 }
+        { status: authResult.statusCode || 401 }
       );
     }
 

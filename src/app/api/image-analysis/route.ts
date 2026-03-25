@@ -803,6 +803,7 @@ export async function POST(request: NextRequest) {
 
       // Analyze the image using VLM
       const response = await zai.chat.completions.createVision({
+        model: 'glm-4-flash',
         messages: [
           {
             role: 'user',

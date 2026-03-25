@@ -20,7 +20,6 @@ import {
   SignalHigh,
   SignalLow,
   SignalMedium,
-  Sync,
   AlertCircle,
   Info
 } from "lucide-react";

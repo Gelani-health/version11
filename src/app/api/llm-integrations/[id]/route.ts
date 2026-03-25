@@ -44,8 +44,8 @@ function prepareIntegrationResponse(integration: {
  */
 export const GET = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  context?: { params: Promise<{ id: string }> }
 ) => {
   // Admin only check
   if (user.role !== 'admin') {
@@ -56,7 +56,7 @@ export const GET = withAuth(async (
   }
 
   try {
-    const { id } = await params;
+    const { id } = await context?.params ?? { id: '' };
 
     if (!id) {
       return NextResponse.json(
@@ -95,8 +95,8 @@ export const GET = withAuth(async (
  */
 export const PUT = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  context?: { params: Promise<{ id: string }> }
 ) => {
   // Admin only check
   if (user.role !== 'admin') {
@@ -107,7 +107,7 @@ export const PUT = withAuth(async (
   }
 
   try {
-    const { id } = await params;
+    const { id } = await context?.params ?? { id: '' };
     const body = await request.json();
 
     if (!id) {
@@ -184,8 +184,8 @@ export const PUT = withAuth(async (
  */
 export const DELETE = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  context?: { params: Promise<{ id: string }> }
 ) => {
   // Admin only check
   if (user.role !== 'admin') {
@@ -196,7 +196,7 @@ export const DELETE = withAuth(async (
   }
 
   try {
-    const { id } = await params;
+    const { id } = await context?.params ?? { id: '' };
 
     if (!id) {
       return NextResponse.json(
@@ -256,8 +256,8 @@ export const DELETE = withAuth(async (
  */
 export const PATCH = withAuth(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  context?: { params: Promise<{ id: string }> }
 ) => {
   // Admin only check
   if (user.role !== 'admin') {
@@ -268,7 +268,7 @@ export const PATCH = withAuth(async (
   }
 
   try {
-    const { id } = await params;
+    const { id } = await context?.params ?? { id: '' };
     const body = await request.json();
 
     if (!id) {

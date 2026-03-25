@@ -198,10 +198,10 @@ export function PatientContextBanner({
         const parsed = JSON.parse(patient.allergies);
         return Array.isArray(parsed) ? parsed.map((a: any) => a.name || a) : [];
       } catch {
-        return patient.allergies.split(",").map((a: string) => a.trim());
+        return (patient.allergies as string).split(",").map((a: string) => a.trim());
       }
     }
-    return patient.allergies;
+    return patient.allergies as string[];
   }, [patient?.allergies]);
 
   // Parse chronic conditions from JSON if needed
@@ -212,10 +212,10 @@ export function PatientContextBanner({
         const parsed = JSON.parse(patient.chronicConditions);
         return Array.isArray(parsed) ? parsed : [];
       } catch {
-        return patient.chronicConditions.split(",").map((c: string) => c.trim());
+        return (patient.chronicConditions as string).split(",").map((c: string) => c.trim());
       }
     }
-    return patient.chronicConditions;
+    return patient.chronicConditions as string[];
   }, [patient?.chronicConditions]);
 
   // Determine vitals status

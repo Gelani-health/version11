@@ -10,13 +10,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import { checkDatabaseHealth, type DatabaseHealth } from '@/lib/db';
+import { checkDatabaseHealth } from '@/lib/db';
+import type { DatabaseHealth } from '@/lib/sqlite-optimizations';
 
-interface ServiceStatus {
-  status: 'operational' | 'degraded' | 'unavailable';
+type ServiceStatus = {
+  status: 'operational' | 'degraded' | 'unavailable' | 'pending';
   latency?: number;
   error?: string;
-}
+};
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -59,10 +60,10 @@ export async function GET() {
     version: '2.0.0',
     services: {
       main: { status: 'operational' },
-      database: { status: 'checking...' },
-      medicalRag: { status: 'checking...' },
-      langchainRag: { status: 'checking...' },
-      medasr: { status: 'checking...' },
+      database: { status: 'pending' },
+      medicalRag: { status: 'pending' },
+      langchainRag: { status: 'pending' },
+      medasr: { status: 'pending' },
     },
     database: null,
     system: {

@@ -857,6 +857,434 @@ PRE_TEST_PROBABILITIES: Dict[str, Dict[str, Dict[str, Any]]] = {
             },
         },
     },
+    
+    # ============================================================================
+    # ADDITIONAL CHIEF COMPLAINTS - EXPANDED COVERAGE
+    # ============================================================================
+    
+    "dizziness_vertigo": {
+        "source": "AAA Guidelines, Neurology Guidelines",
+        "presentations": {
+            "acute": {
+                "bppv": {"prob": 0.25, "icd": "H81.1", "critical": False, "urgency": "semi_urgent"},
+                "vestibular_neuritis": {"prob": 0.15, "icd": "H81.2", "critical": False, "urgency": "urgent"},
+                "menieres_disease": {"prob": 0.10, "icd": "H81.0", "critical": False, "urgency": "semi_urgent"},
+                "stroke": {"prob": 0.08, "icd": "I63", "critical": True, "urgency": "emergent"},
+                "medication_related": {"prob": 0.12, "icd": "T50", "critical": False, "urgency": "urgent"},
+                "orthostatic_hypotension": {"prob": 0.10, "icd": "I95.1", "critical": False, "urgency": "semi_urgent"},
+                "migraine": {"prob": 0.08, "icd": "G43", "critical": False, "urgency": "semi_urgent"},
+                "anxiety": {"prob": 0.07, "icd": "F41", "critical": False, "urgency": "routine"},
+                "other": {"prob": 0.05, "icd": "R42", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "leg_swelling": {
+        "source": "ACCP Guidelines",
+        "presentations": {
+            "unilateral": {
+                "dvt": {"prob": 0.35, "icd": "I82", "critical": True, "urgency": "urgent"},
+                "cellulitis": {"prob": 0.20, "icd": "L03", "critical": False, "urgency": "urgent"},
+                "bakers_cyst": {"prob": 0.10, "icd": "M71.2", "critical": False, "urgency": "semi_urgent"},
+                "lymphedema": {"prob": 0.08, "icd": "I89", "critical": False, "urgency": "semi_urgent"},
+                "muscle_injury": {"prob": 0.12, "icd": "S86", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.15, "icd": "R60", "critical": False, "urgency": "semi_urgent"},
+            },
+            "bilateral": {
+                "heart_failure": {"prob": 0.30, "icd": "I50", "critical": False, "urgency": "urgent"},
+                "venous_insufficiency": {"prob": 0.25, "icd": "I87", "critical": False, "urgency": "semi_urgent"},
+                "renal_failure": {"prob": 0.10, "icd": "N18", "critical": False, "urgency": "urgent"},
+                "cirrhosis": {"prob": 0.08, "icd": "K74", "critical": False, "urgency": "urgent"},
+                "medication_related": {"prob": 0.10, "icd": "T50", "critical": False, "urgency": "semi_urgent"},
+                "proteinuria": {"prob": 0.07, "icd": "R80", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.10, "icd": "R60.9", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "diarrhea": {
+        "source": "IDSA Guidelines, ACG Guidelines",
+        "presentations": {
+            "acute": {
+                "viral_gastroenteritis": {"prob": 0.35, "icd": "A08", "critical": False, "urgency": "semi_urgent"},
+                "bacterial_gastroenteritis": {"prob": 0.15, "icd": "A04", "critical": False, "urgency": "urgent"},
+                "food_poisoning": {"prob": 0.20, "icd": "A05", "critical": False, "urgency": "semi_urgent"},
+                "clostridium_difficile": {"prob": 0.08, "icd": "A04.7", "critical": True, "urgency": "urgent"},
+                "medication_related": {"prob": 0.10, "icd": "T50", "critical": False, "urgency": "semi_urgent"},
+                "inflammatory_bowel_disease": {"prob": 0.05, "icd": "K50", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.07, "icd": "R19.7", "critical": False, "urgency": "semi_urgent"},
+            },
+            "chronic": {
+                "irritable_bowel_syndrome": {"prob": 0.35, "icd": "K58", "critical": False, "urgency": "routine"},
+                "inflammatory_bowel_disease": {"prob": 0.15, "icd": "K50", "critical": False, "urgency": "semi_urgent"},
+                "celiac_disease": {"prob": 0.10, "icd": "K90.0", "critical": False, "urgency": "semi_urgent"},
+                "malabsorption": {"prob": 0.08, "icd": "K90", "critical": False, "urgency": "semi_urgent"},
+                "chronic_infection": {"prob": 0.05, "icd": "A04", "critical": False, "urgency": "semi_urgent"},
+                "colorectal_malignancy": {"prob": 0.05, "icd": "C18", "critical": True, "urgency": "urgent"},
+                "other": {"prob": 0.22, "icd": "R19.7", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "constipation": {
+        "source": "ACG Guidelines",
+        "presentations": {
+            "acute": {
+                "functional": {"prob": 0.40, "icd": "K59.0", "critical": False, "urgency": "routine"},
+                "medication_related": {"prob": 0.20, "icd": "T50", "critical": False, "urgency": "routine"},
+                "bowel_obstruction": {"prob": 0.05, "icd": "K56", "critical": True, "urgency": "urgent"},
+                "electrolyte_imbalance": {"prob": 0.10, "icd": "E87", "critical": False, "urgency": "semi_urgent"},
+                "hypothyroidism": {"prob": 0.05, "icd": "E03", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.20, "icd": "K59.0", "critical": False, "urgency": "routine"},
+            },
+            "chronic": {
+                "functional": {"prob": 0.50, "icd": "K59.0", "critical": False, "urgency": "routine"},
+                "irritable_bowel_syndrome": {"prob": 0.20, "icd": "K58", "critical": False, "urgency": "routine"},
+                "colorectal_malignancy": {"prob": 0.05, "icd": "C18", "critical": True, "urgency": "urgent"},
+                "hypothyroidism": {"prob": 0.05, "icd": "E03", "critical": False, "urgency": "semi_urgent"},
+                "medication_related": {"prob": 0.10, "icd": "T50", "critical": False, "urgency": "routine"},
+                "other": {"prob": 0.10, "icd": "K59.0", "critical": False, "urgency": "routine"},
+            },
+        },
+    },
+    
+    "dysphagia": {
+        "source": "ASGE Guidelines, ACG Guidelines",
+        "presentations": {
+            "oropharyngeal": {
+                "stroke": {"prob": 0.15, "icd": "I63", "critical": True, "urgency": "emergent"},
+                "parkinson_disease": {"prob": 0.10, "icd": "G20", "critical": False, "urgency": "semi_urgent"},
+                "myasthenia_gravis": {"prob": 0.05, "icd": "G70", "critical": True, "urgency": "urgent"},
+                "als": {"prob": 0.03, "icd": "G12.2", "critical": True, "urgency": "urgent"},
+                "structural": {"prob": 0.15, "icd": "K22", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.52, "icd": "R13", "critical": False, "urgency": "semi_urgent"},
+            },
+            "esophageal": {
+                "gerd": {"prob": 0.25, "icd": "K21", "critical": False, "urgency": "semi_urgent"},
+                "eosinophilic_esophagitis": {"prob": 0.10, "icd": "K20.0", "critical": False, "urgency": "semi_urgent"},
+                "esophageal_stricture": {"prob": 0.15, "icd": "K22.2", "critical": False, "urgency": "semi_urgent"},
+                "achalasia": {"prob": 0.08, "icd": "K22.0", "critical": False, "urgency": "semi_urgent"},
+                "esophageal_malignancy": {"prob": 0.10, "icd": "C15", "critical": True, "urgency": "urgent"},
+                "motility_disorder": {"prob": 0.12, "icd": "K22.4", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.20, "icd": "R13", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "weight_loss_unintentional": {
+        "source": "ACP Guidelines",
+        "presentations": {
+            "unexplained": {
+                "malignancy": {"prob": 0.25, "icd": "C80", "critical": True, "urgency": "urgent"},
+                "hyperthyroidism": {"prob": 0.10, "icd": "E05", "critical": False, "urgency": "semi_urgent"},
+                "diabetes_mellitus": {"prob": 0.12, "icd": "E11", "critical": False, "urgency": "semi_urgent"},
+                "gastrointestinal_disorder": {"prob": 0.15, "icd": "K90", "critical": False, "urgency": "semi_urgent"},
+                "chronic_infection": {"prob": 0.08, "icd": "A49", "critical": False, "urgency": "urgent"},
+                "depression": {"prob": 0.10, "icd": "F32", "critical": False, "urgency": "semi_urgent"},
+                "hypercalcemia": {"prob": 0.03, "icd": "E83.5", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.17, "icd": "R63.4", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "ear_pain": {
+        "source": "AAP Guidelines, AAO-HNS Guidelines",
+        "presentations": {
+            "acute": {
+                "acute_otitis_media": {"prob": 0.40, "icd": "H66", "critical": False, "urgency": "semi_urgent"},
+                "otitis_externa": {"prob": 0.25, "icd": "H60", "critical": False, "urgency": "semi_urgent"},
+                "temporomandibular_disorder": {"prob": 0.10, "icd": "M26.6", "critical": False, "urgency": "routine"},
+                "referred_dental_pain": {"prob": 0.08, "icd": "K08", "critical": False, "urgency": "routine"},
+                "mastoiditis": {"prob": 0.02, "icd": "H70", "critical": True, "urgency": "urgent"},
+                "foreign_body": {"prob": 0.05, "icd": "H60", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.10, "icd": "H92", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "epistaxis": {
+        "source": "AAO-HNS Guidelines",
+        "presentations": {
+            "anterior": {
+                "trauma": {"prob": 0.25, "icd": "S00", "critical": False, "urgency": "semi_urgent"},
+                "dry_air": {"prob": 0.20, "icd": "R04.0", "critical": False, "urgency": "routine"},
+                "anticoagulation": {"prob": 0.20, "icd": "T45", "critical": False, "urgency": "urgent"},
+                "hypertension": {"prob": 0.10, "icd": "I10", "critical": False, "urgency": "semi_urgent"},
+                "coagulopathy": {"prob": 0.05, "icd": "D68", "critical": True, "urgency": "urgent"},
+                "malignancy": {"prob": 0.02, "icd": "C30", "critical": True, "urgency": "urgent"},
+                "other": {"prob": 0.18, "icd": "R04.0", "critical": False, "urgency": "semi_urgent"},
+            },
+            "posterior": {
+                "hypertension": {"prob": 0.30, "icd": "I10", "critical": False, "urgency": "urgent"},
+                "anticoagulation": {"prob": 0.25, "icd": "T45", "critical": False, "urgency": "urgent"},
+                "coagulopathy": {"prob": 0.10, "icd": "D68", "critical": True, "urgency": "emergent"},
+                "atherosclerosis": {"prob": 0.15, "icd": "I70", "critical": False, "urgency": "urgent"},
+                "malignancy": {"prob": 0.05, "icd": "C30", "critical": True, "urgency": "urgent"},
+                "other": {"prob": 0.15, "icd": "R04.0", "critical": False, "urgency": "urgent"},
+            },
+        },
+    },
+    
+    "vaginal_bleeding_abnormal": {
+        "source": "ACOG Guidelines",
+        "presentations": {
+            "premenopausal": {
+                "dysfunctional_uterine_bleeding": {"prob": 0.30, "icd": "N92", "critical": False, "urgency": "semi_urgent"},
+                "pregnancy_complication": {"prob": 0.15, "icd": "O00-O08", "critical": True, "urgency": "emergent"},
+                "uterine_fibroids": {"prob": 0.15, "icd": "D25", "critical": False, "urgency": "semi_urgent"},
+                "endometriosis": {"prob": 0.10, "icd": "N80", "critical": False, "urgency": "semi_urgent"},
+                "polyp": {"prob": 0.08, "icd": "N84", "critical": False, "urgency": "semi_urgent"},
+                "malignancy": {"prob": 0.03, "icd": "C54", "critical": True, "urgency": "urgent"},
+                "other": {"prob": 0.19, "icd": "N93", "critical": False, "urgency": "semi_urgent"},
+            },
+            "postmenopausal": {
+                "atrophic_vaginitis": {"prob": 0.30, "icd": "N95.2", "critical": False, "urgency": "semi_urgent"},
+                "endometrial_malignancy": {"prob": 0.15, "icd": "C54", "critical": True, "urgency": "urgent"},
+                "endometrial_hyperplasia": {"prob": 0.10, "icd": "N85.0", "critical": False, "urgency": "urgent"},
+                "polyp": {"prob": 0.15, "icd": "N84", "critical": False, "urgency": "semi_urgent"},
+                "hormone_therapy": {"prob": 0.15, "icd": "Z79", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.15, "icd": "N95", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "pelvic_pain_female": {
+        "source": "ACOG Guidelines",
+        "presentations": {
+            "acute": {
+                "ovarian_cyst_rupture": {"prob": 0.20, "icd": "N83.2", "critical": False, "urgency": "urgent"},
+                "ectopic_pregnancy": {"prob": 0.10, "icd": "O00", "critical": True, "urgency": "emergent"},
+                "ovarian_torsion": {"prob": 0.05, "icd": "N83.5", "critical": True, "urgency": "emergent"},
+                "pelvic_inflammatory_disease": {"prob": 0.15, "icd": "N73", "critical": False, "urgency": "urgent"},
+                "appendicitis": {"prob": 0.08, "icd": "K35", "critical": True, "urgency": "urgent"},
+                "endometriosis": {"prob": 0.12, "icd": "N80", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.30, "icd": "R10.2", "critical": False, "urgency": "urgent"},
+            },
+            "chronic": {
+                "endometriosis": {"prob": 0.30, "icd": "N80", "critical": False, "urgency": "semi_urgent"},
+                "chronic_pelvic_pain_syndrome": {"prob": 0.20, "icd": "R10.2", "critical": False, "urgency": "routine"},
+                "adenomyosis": {"prob": 0.10, "icd": "N80.0", "critical": False, "urgency": "semi_urgent"},
+                "uterine_fibroids": {"prob": 0.15, "icd": "D25", "critical": False, "urgency": "semi_urgent"},
+                "pelvic_adhesions": {"prob": 0.10, "icd": "N73", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.15, "icd": "R10.2", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "eye_pain": {
+        "source": "AAO Guidelines",
+        "presentations": {
+            "acute_red_eye": {
+                "conjunctivitis": {"prob": 0.35, "icd": "H10", "critical": False, "urgency": "semi_urgent"},
+                "corneal_abrasion": {"prob": 0.15, "icd": "S05", "critical": False, "urgency": "urgent"},
+                "acute_angle_closure_glaucoma": {"prob": 0.05, "icd": "H40.2", "critical": True, "urgency": "emergent"},
+                "uveitis": {"prob": 0.08, "icd": "H20", "critical": False, "urgency": "urgent"},
+                "keratitis": {"prob": 0.10, "icd": "H16", "critical": False, "urgency": "urgent"},
+                "episcleritis": {"prob": 0.07, "icd": "H15", "critical": False, "urgency": "semi_urgent"},
+                "foreign_body": {"prob": 0.10, "icd": "T15", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.10, "icd": "H57", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "vision_changes": {
+        "source": "AAO Guidelines",
+        "presentations": {
+            "acute_vision_loss": {
+                "retinal_detachment": {"prob": 0.15, "icd": "H33", "critical": True, "urgency": "emergent"},
+                "central_retinal_artery_occlusion": {"prob": 0.05, "icd": "H34.1", "critical": True, "urgency": "emergent"},
+                "central_retinal_vein_occlusion": {"prob": 0.08, "icd": "H34.8", "critical": True, "urgency": "urgent"},
+                "optic_neuritis": {"prob": 0.10, "icd": "H46", "critical": True, "urgency": "urgent"},
+                "vitreous_hemorrhage": {"prob": 0.10, "icd": "H43.1", "critical": True, "urgency": "urgent"},
+                "temporal_arteritis": {"prob": 0.05, "icd": "M31.5", "critical": True, "urgency": "emergent"},
+                "stroke": {"prob": 0.10, "icd": "I63", "critical": True, "urgency": "emergent"},
+                "other": {"prob": 0.37, "icd": "H53", "critical": False, "urgency": "urgent"},
+            },
+            "gradual_vision_loss": {
+                "cataract": {"prob": 0.35, "icd": "H25", "critical": False, "urgency": "semi_urgent"},
+                "glaucoma": {"prob": 0.15, "icd": "H40", "critical": True, "urgency": "urgent"},
+                "age_related_macular_degeneration": {"prob": 0.15, "icd": "H35.3", "critical": False, "urgency": "semi_urgent"},
+                "diabetic_retinopathy": {"prob": 0.12, "icd": "E11.3", "critical": False, "urgency": "semi_urgent"},
+                "refractive_error": {"prob": 0.15, "icd": "H52", "critical": False, "urgency": "routine"},
+                "other": {"prob": 0.08, "icd": "H53", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "numbness_tingling": {
+        "source": "AAN Guidelines",
+        "presentations": {
+            "acute_focal": {
+                "stroke": {"prob": 0.25, "icd": "I63", "critical": True, "urgency": "emergent"},
+                "tia": {"prob": 0.15, "icd": "G45", "critical": True, "urgency": "emergent"},
+                "migraine_aura": {"prob": 0.10, "icd": "G43", "critical": False, "urgency": "semi_urgent"},
+                "peripheral_nerve_compression": {"prob": 0.20, "icd": "G56", "critical": False, "urgency": "semi_urgent"},
+                "spinal_cord_compression": {"prob": 0.05, "icd": "G95", "critical": True, "urgency": "emergent"},
+                "seizure_postictal": {"prob": 0.08, "icd": "G41", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.17, "icd": "R20", "critical": False, "urgency": "urgent"},
+            },
+            "chronic_progressive": {
+                "peripheral_neuropathy": {"prob": 0.35, "icd": "G62", "critical": False, "urgency": "semi_urgent"},
+                "carpal_tunnel_syndrome": {"prob": 0.15, "icd": "G56.0", "critical": False, "urgency": "semi_urgent"},
+                "cervical_radiculopathy": {"prob": 0.12, "icd": "M54.2", "critical": False, "urgency": "semi_urgent"},
+                "multiple_sclerosis": {"prob": 0.05, "icd": "G35", "critical": True, "urgency": "urgent"},
+                "b12_deficiency": {"prob": 0.08, "icd": "E53.8", "critical": False, "urgency": "semi_urgent"},
+                "diabetic_neuropathy": {"prob": 0.15, "icd": "E11.4", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.10, "icd": "R20", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "neck_pain": {
+        "source": "AAOS Guidelines",
+        "presentations": {
+            "acute_traumatic": {
+                "cervical_strain": {"prob": 0.45, "icd": "S13.4", "critical": False, "urgency": "semi_urgent"},
+                "cervical_fracture": {"prob": 0.05, "icd": "S12", "critical": True, "urgency": "emergent"},
+                "cervical_disc_herniation": {"prob": 0.15, "icd": "M50.1", "critical": False, "urgency": "urgent"},
+                "whiplash_injury": {"prob": 0.25, "icd": "S13.4", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.10, "icd": "M54.2", "critical": False, "urgency": "semi_urgent"},
+            },
+            "non_traumatic": {
+                "cervical_strain": {"prob": 0.40, "icd": "M54.2", "critical": False, "urgency": "routine"},
+                "cervical_disc_disease": {"prob": 0.20, "icd": "M50", "critical": False, "urgency": "semi_urgent"},
+                "cervical_radiculopathy": {"prob": 0.15, "icd": "M54.2", "critical": False, "urgency": "semi_urgent"},
+                "cervical_spondylosis": {"prob": 0.10, "icd": "M47", "critical": False, "urgency": "semi_urgent"},
+                "meningitis": {"prob": 0.01, "icd": "G03", "critical": True, "urgency": "emergent"},
+                "other": {"prob": 0.14, "icd": "M54.2", "critical": False, "urgency": "routine"},
+            },
+        },
+    },
+    
+    "shoulder_pain": {
+        "source": "AAOS Guidelines",
+        "presentations": {
+            "acute": {
+                "rotator_cuff_tendinitis": {"prob": 0.30, "icd": "M75.1", "critical": False, "urgency": "semi_urgent"},
+                "rotator_cuff_tear": {"prob": 0.15, "icd": "M75.1", "critical": False, "urgency": "urgent"},
+                "adhesive_capsulitis": {"prob": 0.10, "icd": "M75.0", "critical": False, "urgency": "semi_urgent"},
+                "shoulder_dislocation": {"prob": 0.05, "icd": "S43", "critical": False, "urgency": "urgent"},
+                "acromioclavicular_injury": {"prob": 0.10, "icd": "S43.5", "critical": False, "urgency": "semi_urgent"},
+                "referred_cardiac_pain": {"prob": 0.05, "icd": "I21", "critical": True, "urgency": "emergent"},
+                "other": {"prob": 0.25, "icd": "M75.9", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "hip_pain": {
+        "source": "AAOS Guidelines",
+        "presentations": {
+            "acute": {
+                "osteoarthritis": {"prob": 0.30, "icd": "M16", "critical": False, "urgency": "semi_urgent"},
+                "hip_fracture": {"prob": 0.10, "icd": "S72", "critical": True, "urgency": "emergent"},
+                "trochanteric_bursitis": {"prob": 0.15, "icd": "M70.6", "critical": False, "urgency": "semi_urgent"},
+                "hip_labral_tear": {"prob": 0.08, "icd": "S73", "critical": False, "urgency": "semi_urgent"},
+                "septic_arthritis": {"prob": 0.02, "icd": "M00", "critical": True, "urgency": "emergent"},
+                "avascular_necrosis": {"prob": 0.05, "icd": "M87", "critical": False, "urgency": "urgent"},
+                "referred_back_pain": {"prob": 0.15, "icd": "M54.5", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.15, "icd": "M25.5", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "knee_pain": {
+        "source": "AAOS Guidelines",
+        "presentations": {
+            "acute_traumatic": {
+                "meniscal_tear": {"prob": 0.20, "icd": "S83.2", "critical": False, "urgency": "urgent"},
+                "anterior_cruciate_ligament_tear": {"prob": 0.15, "icd": "S83.5", "critical": False, "urgency": "urgent"},
+                "collateral_ligament_injury": {"prob": 0.10, "icd": "S83.4", "critical": False, "urgency": "semi_urgent"},
+                "patellar_dislocation": {"prob": 0.05, "icd": "S83.0", "critical": False, "urgency": "urgent"},
+                "knee_fracture": {"prob": 0.05, "icd": "S82", "critical": True, "urgency": "urgent"},
+                "contusion": {"prob": 0.25, "icd": "S80", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.20, "icd": "M25.5", "critical": False, "urgency": "semi_urgent"},
+            },
+            "non_traumatic": {
+                "osteoarthritis": {"prob": 0.40, "icd": "M17", "critical": False, "urgency": "semi_urgent"},
+                "patellofemoral_syndrome": {"prob": 0.20, "icd": "M22", "critical": False, "urgency": "routine"},
+                "bursitis": {"prob": 0.10, "icd": "M70", "critical": False, "urgency": "semi_urgent"},
+                "septic_arthritis": {"prob": 0.02, "icd": "M00", "critical": True, "urgency": "emergent"},
+                "gout": {"prob": 0.08, "icd": "M10", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.20, "icd": "M25.5", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "pruritus": {
+        "source": "AAD Guidelines",
+        "presentations": {
+            "localized": {
+                "contact_dermatitis": {"prob": 0.30, "icd": "L25", "critical": False, "urgency": "semi_urgent"},
+                "insect_bite": {"prob": 0.20, "icd": "W57", "critical": False, "urgency": "routine"},
+                "fungal_infection": {"prob": 0.15, "icd": "B35", "critical": False, "urgency": "semi_urgent"},
+                "psoriasis": {"prob": 0.10, "icd": "L40", "critical": False, "urgency": "semi_urgent"},
+                "dry_skin": {"prob": 0.15, "icd": "L85", "critical": False, "urgency": "routine"},
+                "other": {"prob": 0.10, "icd": "L29", "critical": False, "urgency": "semi_urgent"},
+            },
+            "generalized": {
+                "xerosis": {"prob": 0.25, "icd": "L85", "critical": False, "urgency": "routine"},
+                "renal_failure": {"prob": 0.10, "icd": "N18", "critical": False, "urgency": "urgent"},
+                "cholestasis": {"prob": 0.08, "icd": "K83.1", "critical": False, "urgency": "urgent"},
+                "hypothyroidism": {"prob": 0.05, "icd": "E03", "critical": False, "urgency": "semi_urgent"},
+                "malignancy": {"prob": 0.05, "icd": "C80", "critical": True, "urgency": "urgent"},
+                "drug_reaction": {"prob": 0.12, "icd": "L27", "critical": False, "urgency": "semi_urgent"},
+                "scabies": {"prob": 0.10, "icd": "B86", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.25, "icd": "L29", "critical": False, "urgency": "semi_urgent"},
+            },
+        },
+    },
+    
+    "wound_infection": {
+        "source": "IDSA Guidelines",
+        "presentations": {
+            "post_surgical": {
+                "surgical_site_infection": {"prob": 0.45, "icd": "T81.4", "critical": False, "urgency": "urgent"},
+                "cellulitis": {"prob": 0.25, "icd": "L03", "critical": False, "urgency": "urgent"},
+                "abscess": {"prob": 0.15, "icd": "L02", "critical": False, "urgency": "urgent"},
+                "necrotizing_fasciitis": {"prob": 0.02, "icd": "M72.6", "critical": True, "urgency": "emergent"},
+                "dehiscence": {"prob": 0.08, "icd": "T81.3", "critical": False, "urgency": "urgent"},
+                "other": {"prob": 0.05, "icd": "T14", "critical": False, "urgency": "urgent"},
+            },
+            "traumatic": {
+                "cellulitis": {"prob": 0.35, "icd": "L03", "critical": False, "urgency": "urgent"},
+                "abscess": {"prob": 0.25, "icd": "L02", "critical": False, "urgency": "urgent"},
+                "tetanus": {"prob": 0.001, "icd": "A35", "critical": True, "urgency": "emergent"},
+                "foreign_body": {"prob": 0.15, "icd": "T14", "critical": False, "urgency": "semi_urgent"},
+                "necrotizing_infection": {"prob": 0.01, "icd": "M72.6", "critical": True, "urgency": "emergent"},
+                "other": {"prob": 0.239, "icd": "T14", "critical": False, "urgency": "urgent"},
+            },
+        },
+    },
+    
+    "chest_wall_trauma": {
+        "source": "ATLS Guidelines",
+        "presentations": {
+            "blunt": {
+                "rib_fracture": {"prob": 0.40, "icd": "S22.3", "critical": False, "urgency": "urgent"},
+                "sternal_fracture": {"prob": 0.05, "icd": "S22.2", "critical": True, "urgency": "urgent"},
+                "flail_chest": {"prob": 0.03, "icd": "S22.5", "critical": True, "urgency": "emergent"},
+                "pulmonary_contusion": {"prob": 0.15, "icd": "S27.3", "critical": True, "urgency": "emergent"},
+                "cardiac_contusion": {"prob": 0.05, "icd": "S26", "critical": True, "urgency": "emergent"},
+                "pneumothorax": {"prob": 0.10, "icd": "S27.0", "critical": True, "urgency": "emergent"},
+                "hemothorax": {"prob": 0.07, "icd": "S27.1", "critical": True, "urgency": "emergent"},
+                "other": {"prob": 0.15, "icd": "S29", "critical": False, "urgency": "urgent"},
+            },
+        },
+    },
+    
+    "allergic_reaction": {
+        "source": "AAAAI Guidelines",
+        "presentations": {
+            "acute": {
+                "urticaria": {"prob": 0.35, "icd": "L50", "critical": False, "urgency": "semi_urgent"},
+                "angioedema": {"prob": 0.15, "icd": "T78.3", "critical": True, "urgency": "emergent"},
+                "anaphylaxis": {"prob": 0.10, "icd": "T78.2", "critical": True, "urgency": "emergent"},
+                "contact_dermatitis": {"prob": 0.20, "icd": "L25", "critical": False, "urgency": "semi_urgent"},
+                "drug_eruption": {"prob": 0.12, "icd": "L27", "critical": False, "urgency": "semi_urgent"},
+                "other": {"prob": 0.08, "icd": "T78", "critical": False, "urgency": "urgent"},
+            },
+        },
+    },
 }
 
 
@@ -1798,6 +2226,624 @@ CONDITIONAL_LIKELIHOOD_RATIOS: List[ConditionalLikelihoodRatio] = [
         test_name="wells_dvt_criteria", diagnosis="dvt",
         lr_positive=5.0, lr_negative=0.2,
         source="Wells Validation Studies", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # ============================================================================
+    # ADDITIONAL CONDITIONAL LRS - EXPANDED COVERAGE
+    # ============================================================================
+    
+    # Nystagmus for vestibular conditions
+    ConditionalLikelihoodRatio(
+        test_name="nystagmus", diagnosis="bppv",
+        lr_positive=8.0, lr_negative=0.2,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Positional nystagmus with Dix-Hallpike"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="nystagmus", diagnosis="vestibular_neuritis",
+        lr_positive=6.0, lr_negative=0.3,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="nystagmus", diagnosis="stroke",
+        lr_positive=1.5, lr_negative=0.8,
+        notes="Central vs peripheral nystagmus patterns"
+    ),
+    
+    # Dix-Hallpike Test
+    ConditionalLikelihoodRatio(
+        test_name="dix_hallpike_positive", diagnosis="bppv",
+        lr_positive=10.0, lr_negative=0.05,
+        source="AAA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="dix_hallpike_positive", diagnosis="vestibular_neuritis",
+        lr_positive=1.0, lr_negative=1.0,
+        notes="Should be negative in vestibular neuritis"
+    ),
+    
+    # HINTS Exam for stroke vs vestibular
+    ConditionalLikelihoodRatio(
+        test_name="hints_abnormal", diagnosis="stroke",
+        lr_positive=15.0, lr_negative=0.05,
+        source="Stroke 2016", evidence_level=EvidenceLevel.HIGH,
+        notes="Head Impulse, Nystagmus, Test of Skew"
+    ),
+    
+    # Head Impulse Test
+    ConditionalLikelihoodRatio(
+        test_name="head_impulse_positive", diagnosis="vestibular_neuritis",
+        lr_positive=12.0, lr_negative=0.1,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="head_impulse_positive", diagnosis="stroke",
+        lr_positive=1.0, lr_negative=0.5,
+        notes="Usually negative in central causes"
+    ),
+    
+    # Pitting edema
+    ConditionalLikelihoodRatio(
+        test_name="pitting_edema", diagnosis="heart_failure",
+        lr_positive=3.5, lr_negative=0.4,
+        source="Framingham Criteria", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="pitting_edema", diagnosis="venous_insufficiency",
+        lr_positive=4.0, lr_negative=0.3,
+        source="Vascular Surgery Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="pitting_edema", diagnosis="renal_failure",
+        lr_positive=2.0, lr_negative=0.6,
+        source="Nephrology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Rales/Crackles on lung exam
+    ConditionalLikelihoodRatio(
+        test_name="rales", diagnosis="heart_failure",
+        lr_positive=4.0, lr_negative=0.4,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="rales", diagnosis="pneumonia",
+        lr_positive=2.5, lr_negative=0.5,
+        source="CHEST Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="rales", diagnosis="pulmonary_fibrosis",
+        lr_positive=3.0, lr_negative=0.5,
+        notes="Velcro crackles characteristic"
+    ),
+    
+    # S3 Gallop
+    ConditionalLikelihoodRatio(
+        test_name="s3_gallop", diagnosis="heart_failure",
+        lr_positive=8.0, lr_negative=0.3,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.HIGH,
+        notes="Highly specific for systolic dysfunction"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="s3_gallop", diagnosis="cardiomyopathy",
+        lr_positive=5.0, lr_negative=0.5,
+        source="Cardiology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Jugular Venous Distension
+    ConditionalLikelihoodRatio(
+        test_name="jvd", diagnosis="heart_failure",
+        lr_positive=5.0, lr_negative=0.3,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="jvd", diagnosis="pulmonary_embolism",
+        lr_positive=2.5, lr_negative=0.6,
+        notes="Right heart strain sign"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="jvd", diagnosis="cardiac_tamponade",
+        lr_positive=6.0, lr_negative=0.3,
+        source="Cardiology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Hepatojugular Reflux
+    ConditionalLikelihoodRatio(
+        test_name="hepatojugular_reflux", diagnosis="heart_failure",
+        lr_positive=7.0, lr_negative=0.3,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hepatojugular_reflux", diagnosis="right_heart_failure",
+        lr_positive=8.0, lr_negative=0.2,
+        notes="Classic sign of right-sided heart failure"
+    ),
+    
+    # Murphy's Sign
+    ConditionalLikelihoodRatio(
+        test_name="murphy_sign", diagnosis="cholecystitis",
+        lr_positive=4.5, lr_negative=0.3,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="murphy_sign", diagnosis="biliary_colic",
+        lr_positive=1.5, lr_negative=0.7,
+        notes="Less prominent in biliary colic"
+    ),
+    
+    # McBurney's Point Tenderness
+    ConditionalLikelihoodRatio(
+        test_name="mcburney_tenderness", diagnosis="appendicitis",
+        lr_positive=4.0, lr_negative=0.4,
+        source="Alvarado Score Validation", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="mcburney_tenderness", diagnosis="mesenteric_adenitis",
+        lr_positive=1.5, lr_negative=0.7,
+        notes="Can mimic appendicitis"
+    ),
+    
+    # Rebound Tenderness
+    ConditionalLikelihoodRatio(
+        test_name="rebound_tenderness", diagnosis="peritonitis",
+        lr_positive=6.0, lr_negative=0.4,
+        source="Surgery Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="rebound_tenderness", diagnosis="appendicitis",
+        lr_positive=3.0, lr_negative=0.5,
+        source="Alvarado Score", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="rebound_tenderness", diagnosis="perforated_visus",
+        lr_positive=8.0, lr_negative=0.3,
+        notes="Highly suggestive of perforation"
+    ),
+    
+    # Rovsing's Sign
+    ConditionalLikelihoodRatio(
+        test_name="rovsing_sign", diagnosis="appendicitis",
+        lr_positive=3.0, lr_negative=0.6,
+        source="Alvarado Score", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Psoas Sign
+    ConditionalLikelihoodRatio(
+        test_name="psoas_sign", diagnosis="appendicitis",
+        lr_positive=2.5, lr_negative=0.6,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.MODERATE,
+        notes="Retrocecal appendix"
+    ),
+    
+    # Obturator Sign
+    ConditionalLikelihoodRatio(
+        test_name="obturator_sign", diagnosis="appendicitis",
+        lr_positive=2.0, lr_negative=0.7,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.MODERATE,
+        notes="Pelvic appendix"
+    ),
+    
+    # Kernig's Sign
+    ConditionalLikelihoodRatio(
+        test_name="kernig_sign", diagnosis="meningitis",
+        lr_positive=3.0, lr_negative=0.5,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="kernig_sign", diagnosis="subarachnoid_hemorrhage",
+        lr_positive=2.0, lr_negative=0.6,
+        notes="Meningeal irritation"
+    ),
+    
+    # Brudzinski's Sign
+    ConditionalLikelihoodRatio(
+        test_name="brudzinski_sign", diagnosis="meningitis",
+        lr_positive=4.0, lr_negative=0.4,
+        source="JAMA Rational Clinical Examination", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="brudzinski_sign", diagnosis="encephalitis",
+        lr_positive=2.0, lr_negative=0.6,
+        notes="Meningeal irritation"
+    ),
+    
+    # Straight Leg Raise
+    ConditionalLikelihoodRatio(
+        test_name="straight_leg_raise", diagnosis="herniated_disc",
+        lr_positive=4.0, lr_negative=0.3,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="straight_leg_raise", diagnosis="spinal_stenosis",
+        lr_positive=1.5, lr_negative=0.6,
+        notes="Less commonly positive"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="straight_leg_raise", diagnosis="cauda_equina_syndrome",
+        lr_positive=3.0, lr_negative=0.5,
+        notes="Often bilateral in cauda equina"
+    ),
+    
+    # Crossed Straight Leg Raise
+    ConditionalLikelihoodRatio(
+        test_name="crossed_straight_leg_raise", diagnosis="herniated_disc",
+        lr_positive=8.0, lr_negative=0.5,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Highly specific for disc herniation"
+    ),
+    
+    # Fecal Occult Blood
+    ConditionalLikelihoodRatio(
+        test_name="fecal_occult_blood", diagnosis="colorectal_malignancy",
+        lr_positive=5.0, lr_negative=0.4,
+        source="USPSTF Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="fecal_occult_blood", diagnosis="upper_gi_bleed",
+        lr_positive=3.0, lr_negative=0.5,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="fecal_occult_blood", diagnosis="hemorrhoids",
+        lr_positive=1.5, lr_negative=0.7,
+        notes="Common with hemorrhoids"
+    ),
+    
+    # Guaiac Test
+    ConditionalLikelihoodRatio(
+        test_name="guaiac_positive", diagnosis="gastrointestinal_bleeding",
+        lr_positive=8.0, lr_negative=0.3,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Rectal Bleeding
+    ConditionalLikelihoodRatio(
+        test_name="hematochezia", diagnosis="lower_gi_bleed",
+        lr_positive=15.0, lr_negative=0.1,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hematochezia", diagnosis="colorectal_malignancy",
+        lr_positive=3.0, lr_negative=0.6,
+        source="Cancer Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hematochezia", diagnosis="diverticulosis",
+        lr_positive=5.0, lr_negative=0.4,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Melena
+    ConditionalLikelihoodRatio(
+        test_name="melena", diagnosis="upper_gi_bleed",
+        lr_positive=20.0, lr_negative=0.1,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="melena", diagnosis="peptic_ulcer",
+        lr_positive=8.0, lr_negative=0.3,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="melena", diagnosis="esophageal_varices",
+        lr_positive=5.0, lr_negative=0.4,
+        source="AASLD Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Coffee Ground Emesis
+    ConditionalLikelihoodRatio(
+        test_name="coffee_ground_emesis", diagnosis="upper_gi_bleed",
+        lr_positive=15.0, lr_negative=0.2,
+        source="ACG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="coffee_ground_emesis", diagnosis="gastritis",
+        lr_positive=5.0, lr_negative=0.4,
+        source="Gastroenterology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # HEART Score Components
+    ConditionalLikelihoodRatio(
+        test_name="heart_score_high", diagnosis="acute_coronary_syndrome",
+        lr_positive=10.0, lr_negative=0.1,
+        source="HEART Score Validation", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="heart_score_low", diagnosis="acute_coronary_syndrome",
+        lr_positive=0.2, lr_negative=5.0,
+        source="HEART Score Validation", evidence_level=EvidenceLevel.HIGH,
+        notes="Low score has high negative predictive value"
+    ),
+    
+    # PERC Rule
+    ConditionalLikelihoodRatio(
+        test_name="perc_positive", diagnosis="pulmonary_embolism",
+        lr_positive=2.0, lr_negative=0.2,
+        source="PERC Rule Validation", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="perc_negative", diagnosis="pulmonary_embolism",
+        lr_positive=0.1, lr_negative=10.0,
+        source="PERC Rule Validation", evidence_level=EvidenceLevel.HIGH,
+        notes="Negative PERC rules out PE in low risk"
+    ),
+    
+    # Well's Criteria for PE
+    ConditionalLikelihoodRatio(
+        test_name="wells_pe_high", diagnosis="pulmonary_embolism",
+        lr_positive=6.0, lr_negative=0.2,
+        source="Wells Validation Studies", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="wells_pe_low", diagnosis="pulmonary_embolism",
+        lr_positive=0.3, lr_negative=3.0,
+        source="Wells Validation Studies", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Geneva Score
+    ConditionalLikelihoodRatio(
+        test_name="geneva_high", diagnosis="pulmonary_embolism",
+        lr_positive=5.0, lr_negative=0.3,
+        source="Geneva Score Validation", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Centor Criteria
+    ConditionalLikelihoodRatio(
+        test_name="centor_high", diagnosis="strep_pharyngitis",
+        lr_positive=5.0, lr_negative=0.2,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="centor_low", diagnosis="strep_pharyngitis",
+        lr_positive=0.3, lr_negative=3.0,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Rapid Strep Test
+    ConditionalLikelihoodRatio(
+        test_name="rapid_strep_positive", diagnosis="strep_pharyngitis",
+        lr_positive=20.0, lr_negative=0.1,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="rapid_strep_negative", diagnosis="strep_pharyngitis",
+        lr_positive=0.2, lr_negative=5.0,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Throat culture needed for confirmation in children"
+    ),
+    
+    # Throat Culture
+    ConditionalLikelihoodRatio(
+        test_name="throat_culture_positive", diagnosis="strep_pharyngitis",
+        lr_positive=50.0, lr_negative=0.05,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Gold standard"
+    ),
+    
+    # Urinalysis Findings
+    ConditionalLikelihoodRatio(
+        test_name="ua_pyuria", diagnosis="uti",
+        lr_positive=6.0, lr_negative=0.2,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_nitrites", diagnosis="uti",
+        lr_positive=8.0, lr_negative=0.3,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_leukocyte_esterase", diagnosis="uti",
+        lr_positive=5.0, lr_negative=0.3,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_bacteriuria", diagnosis="uti",
+        lr_positive=10.0, lr_negative=0.2,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_hematuria", diagnosis="uti",
+        lr_positive=2.0, lr_negative=0.6,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_hematuria", diagnosis="bladder_malignancy",
+        lr_positive=5.0, lr_negative=0.5,
+        source="Urology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_hematuria", diagnosis="renal_calculus",
+        lr_positive=4.0, lr_negative=0.5,
+        source="Urology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Proteinuria
+    ConditionalLikelihoodRatio(
+        test_name="ua_proteinuria", diagnosis="nephrotic_syndrome",
+        lr_positive=15.0, lr_negative=0.1,
+        source="Nephrology Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_proteinuria", diagnosis="preeclampsia",
+        lr_positive=10.0, lr_negative=0.2,
+        source="ACOG Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="ua_proteinuria", diagnosis="diabetic_nephropathy",
+        lr_positive=5.0, lr_negative=0.3,
+        source="ADA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Urine Culture
+    ConditionalLikelihoodRatio(
+        test_name="urine_culture_positive", diagnosis="uti",
+        lr_positive=20.0, lr_negative=0.1,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Gold standard > 100,000 CFU/mL"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="urine_culture_positive", diagnosis="pyelonephritis",
+        lr_positive=15.0, lr_negative=0.2,
+        source="IDSA Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Knee Examination Findings
+    ConditionalLikelihoodRatio(
+        test_name="mcmurray_test", diagnosis="meniscal_tear",
+        lr_positive=4.0, lr_negative=0.5,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="larson_test", diagnosis="meniscal_tear",
+        lr_positive=3.0, lr_negative=0.5,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="anterior_drawer", diagnosis="acl_tear",
+        lr_positive=10.0, lr_negative=0.3,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="lachman_test", diagnosis="acl_tear",
+        lr_positive=15.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+        notes="Most sensitive test for ACL"
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="posterior_drawer", diagnosis="pcl_tear",
+        lr_positive=12.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="pivot_shift", diagnosis="acl_tear",
+        lr_positive=15.0, lr_negative=0.3,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="valgus_stress", diagnosis="mcl_injury",
+        lr_positive=12.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="varus_stress", diagnosis="lcl_injury",
+        lr_positive=10.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Shoulder Examination
+    ConditionalLikelihoodRatio(
+        test_name="empty_can_test", diagnosis="supraspinatus_tear",
+        lr_positive=5.0, lr_negative=0.4,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="drop_arm_test", diagnosis="rotator_cuff_tear",
+        lr_positive=8.0, lr_negative=0.3,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="neer_sign", diagnosis="impingement",
+        lr_positive=4.0, lr_negative=0.4,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hawkins_sign", diagnosis="impingement",
+        lr_positive=3.5, lr_negative=0.5,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="apprehension_test", diagnosis="shoulder_instability",
+        lr_positive=10.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="relocation_test", diagnosis="shoulder_instability",
+        lr_positive=8.0, lr_negative=0.2,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Hip Examination
+    ConditionalLikelihoodRatio(
+        test_name="fadir_test", diagnosis="hip_labral_tear",
+        lr_positive=5.0, lr_negative=0.4,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="faber_test", diagnosis="hip_pathology",
+        lr_positive=4.0, lr_negative=0.4,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="thomas_test", diagnosis="hip_flexion_contracture",
+        lr_positive=6.0, lr_negative=0.3,
+        source="AAOS Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Neurological Examination
+    ConditionalLikelihoodRatio(
+        test_name="babinski_sign", diagnosis="upper_motor_neuron_lesion",
+        lr_positive=15.0, lr_negative=0.2,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="babinski_sign", diagnosis="stroke",
+        lr_positive=10.0, lr_negative=0.3,
+        source="Stroke Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="babinski_sign", diagnosis="spinal_cord_compression",
+        lr_positive=12.0, lr_negative=0.2,
+        source="Neurosurgery Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    
+    # Pronator Drift
+    ConditionalLikelihoodRatio(
+        test_name="pronator_drift", diagnosis="stroke",
+        lr_positive=8.0, lr_negative=0.3,
+        source="Stroke Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="pronator_drift", diagnosis="brain_malignancy",
+        lr_positive=5.0, lr_negative=0.4,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Tremor Assessment
+    ConditionalLikelihoodRatio(
+        test_name="resting_tremor", diagnosis="parkinson_disease",
+        lr_positive=8.0, lr_negative=0.3,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="intention_tremor", diagnosis="cerebellar_disease",
+        lr_positive=6.0, lr_negative=0.4,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="postural_tremor", diagnosis="essential_tremor",
+        lr_positive=5.0, lr_negative=0.4,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="postural_tremor", diagnosis="hyperthyroidism",
+        lr_positive=3.0, lr_negative=0.5,
+        source="Endocrine Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    
+    # Hemiparesis
+    ConditionalLikelihoodRatio(
+        test_name="hemiparesis", diagnosis="stroke",
+        lr_positive=12.0, lr_negative=0.2,
+        source="Stroke Guidelines", evidence_level=EvidenceLevel.HIGH,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hemiparesis", diagnosis="brain_malignancy",
+        lr_positive=5.0, lr_negative=0.4,
+        source="Neurology Guidelines", evidence_level=EvidenceLevel.MODERATE,
+    ),
+    ConditionalLikelihoodRatio(
+        test_name="hemiparesis", diagnosis="subdural_hematoma",
+        lr_positive=6.0, lr_negative=0.4,
+        source="Neurosurgery Guidelines", evidence_level=EvidenceLevel.HIGH,
     ),
 ]
 

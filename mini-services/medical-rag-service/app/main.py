@@ -3894,6 +3894,197 @@ async def acknowledge_performance_alert(alert_id: str, acknowledged_by: str):
     return {"status": "not_found", "alert_id": alert_id}
 
 
+# =============================================================================
+# BAYESIAN DIAGNOSTIC ENDPOINTS - Comprehensive Bayesian Reasoning Engine
+# =============================================================================
+
+@app.post("/api/v1/bayesian/session", tags=["Bayesian Diagnosis"])
+async def create_bayesian_session(
+    chief_complaint: str,
+    presentation_type: str,
+    patient_id: Optional[str] = None,
+    custom_probabilities: Optional[Dict[str, float]] = None,
+):
+    """
+    Create a new Bayesian diagnostic session.
+    
+    Supports 50+ chief complaints with evidence-based pre-test probabilities.
+    
+    Chief complaints include:
+    - chest_pain (acute_coronary_syndrome, pleuritic, atypical)
+    - dyspnea (acute, chronic_progressive)
+    - abdominal_pain_acute (general, right_lower_quadrant, right_upper_quadrant, epigastric)
+    - headache (thunderclap, chronic_recurrent, progressive)
+    - syncope, fever, altered_mental_status, seizure, focal_weakness
+    - and many more...
+    
+    Returns session_id for tracking diagnostic journey through serial test applications.
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+    
+    engine = get_bayesian_engine()
+    session = engine.create_session(
+        chief_complaint=chief_complaint,
+        presentation_type=presentation_type,
+        patient_id=patient_id or "",
+        custom_probabilities=custom_probabilities,
+    )
+    
+    return {
+        "session_id": session.session_id,
+        "chief_complaint": session.chief_complaint,
+        "presentation_type": session.presentation_type,
+        "hypotheses": {k: v.to_dict() for k, v in session.hypotheses.items()},
+        "created_at": session.created_at.isoformat(),
+    }
+
+
+@app.post("/api/v1/bayesian/apply-test", tags=["Bayesian Diagnosis"])
+async def apply_diagnostic_test(
+    session_id: str,
+    test_name: str,
+    result: str,  # positive, negative, inconclusive
+    custom_lr: Optional[float] = None,
+    notes: Optional[str] = None,
+):
+    """
+    Apply a diagnostic test result with conditional likelihood ratios.
+    
+    Uses 200+ conditional LRs specific to each diagnosis.
+    A single test (e.g., troponin) has different LRs for different diagnoses.
+    
+    Example: Troponin has:
+    - LR+ 12.0 for Acute Coronary Syndrome
+    - LR+ 2.0 for Pulmonary Embolism
+    - LR+ 1.0 for Musculoskeletal pain
+    
+    Supports serial Bayesian updating through session tracking.
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine, TestResult
+    
+    engine = get_bayesian_engine()
+    
+    # Convert result string to enum
+    result_enum = TestResult.POSITIVE if result.lower() == "positive" else \
+                  TestResult.NEGATIVE if result.lower() == "negative" else \
+                  TestResult.INCONCLUSIVE
+    
+    result_data = engine.apply_test(
+        session_id=session_id,
+        test_name=test_name,
+        result=result_enum,
+        custom_lr=custom_lr,
+        notes=notes or "",
+    )
+    
+    return result_data
+
+
+@app.get("/api/v1/bayesian/analyze/{session_id}", tags=["Bayesian Diagnosis"])
+async def analyze_bayesian_session(session_id: str):
+    """
+    Analyze the diagnostic session and return comprehensive results.
+    
+    Returns:
+    - Ranked hypotheses with post-test probabilities
+    - Confidence level
+    - Recommended next tests
+    - Critical diagnoses to rule out
+    - Tests with highest diagnostic yield
+    - Clinical reasoning explanation
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+    
+    engine = get_bayesian_engine()
+    result = engine.analyze(session_id)
+    
+    return result.to_dict()
+
+
+@app.get("/api/v1/bayesian/session/{session_id}", tags=["Bayesian Diagnosis"])
+async def get_bayesian_session(session_id: str):
+    """Get the current state of a diagnostic session."""
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+    
+    engine = get_bayesian_engine()
+    session = engine.get_session(session_id)
+    
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return session.to_dict()
+
+
+@app.get("/api/v1/bayesian/sessions", tags=["Bayesian Diagnosis"])
+async def list_bayesian_sessions(patient_id: Optional[str] = None):
+    """List all diagnostic sessions, optionally filtered by patient."""
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+    
+    engine = get_bayesian_engine()
+    return {"sessions": engine.list_sessions(patient_id)}
+
+
+@app.delete("/api/v1/bayesian/session/{session_id}", tags=["Bayesian Diagnosis"])
+async def reset_bayesian_session(session_id: str):
+    """Reset/delete a diagnostic session."""
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine
+    
+    engine = get_bayesian_engine()
+    success = engine.reset_session(session_id)
+    
+    return {
+        "status": "success" if success else "not_found",
+        "session_id": session_id,
+    }
+
+
+@app.get("/api/v1/bayesian/likelihood-ratios/{test_name}", tags=["Bayesian Diagnosis"])
+async def get_conditional_likelihood_ratios(test_name: str):
+    """
+    Get all conditional likelihood ratios for a specific test.
+    
+    Shows how the same test has different LRs for different diagnoses.
+    """
+    from app.diagnostic.bayesian_reasoning import get_bayesian_engine, CONDITIONAL_LIKELIHOOD_RATIOS
+    
+    test_key = test_name.lower().replace(" ", "_").replace("-", "_")
+    
+    results = []
+    for lr in CONDITIONAL_LIKELIHOOD_RATIOS:
+        if lr.test_name.lower().replace(" ", "_").replace("-", "_") == test_key:
+            results.append(lr.to_dict())
+    
+    return {
+        "test_name": test_name,
+        "conditional_likelihood_ratios": results,
+        "total_diagnoses": len(results),
+    }
+
+
+@app.get("/api/v1/bayesian/chief-complaints", tags=["Bayesian Diagnosis"])
+async def list_chief_complaints():
+    """
+    List all available chief complaints with their presentation types.
+    
+    Returns 50+ chief complaints with evidence-based pre-test probabilities.
+    """
+    from app.diagnostic.bayesian_reasoning import PRE_TEST_PROBABILITIES
+    
+    complaints = []
+    for complaint_key, complaint_data in PRE_TEST_PROBABILITIES.items():
+        presentations = list(complaint_data.get("presentations", {}).keys())
+        complaints.append({
+            "chief_complaint": complaint_key,
+            "source": complaint_data.get("source", ""),
+            "presentation_types": presentations,
+        })
+    
+    return {
+        "chief_complaints": complaints,
+        "total": len(complaints),
+    }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

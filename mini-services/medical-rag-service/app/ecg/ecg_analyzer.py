@@ -6,15 +6,23 @@ AI-assisted ECG interpretation for clinical decision support.
 
 Features:
 - Automated rhythm detection
-- Interval measurement
+- Interval measurement with multiple QTc formulas
 - STEMI criteria evaluation
 - Arrhythmia detection
 - Clinical correlation
+- Gender-aware QTc thresholds
 
 Based on:
 - AHA/ACC/HRS Guidelines
 - Minnesota Code Classification
 - Clinical ECG standards
+- Rautaharju PM et al. AHA/ACCF/HRS 2009 Recommendations
+
+QTc Formula References:
+- Bazett HC. Heart 1920;7:353-370 (original, over-corrects at extreme HR)
+- Fridericia LS. Acta Med Scand 1920;54:467-486 (most accurate across HR range)
+- Hodges M. Noninvasive Electrocardiology 1992;61:405 (linear correction)
+- Sagie A et al. Circulation 1992;86:663-667 (Framingham linear)
 
 Note: This is a clinical decision support tool.
 All ECG interpretations should be verified by qualified clinicians.
@@ -60,6 +68,72 @@ class ClinicalSignificance(str, Enum):
     NORMAL = "normal"  # Within normal limits
 
 
+class QTcStatus(str, Enum):
+    """QTc prolongation status based on gender-specific thresholds.
+    
+    Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009 Recommendations for 
+    the Standardization and Interpretation of the Electrocardiogram.
+    J Am Coll Cardiol 2009;53:982-991.
+    
+    Thresholds:
+    - Male: Normal ≤440ms, Borderline 441-450ms, Prolonged >450ms
+    - Female: Normal ≤450ms, Borderline 451-460ms, Prolonged >460ms
+    - Critical (both sexes): >500ms (high arrhythmia risk)
+    """
+    NORMAL = "normal"
+    BORDERLINE = "borderline"
+    PROLONGED = "prolonged"
+    CRITICAL = "critical"  # >500ms, high torsades risk
+
+
+@dataclass
+class QTcFormulas:
+    """
+    QTc values calculated using all four validated formulas.
+    
+    All formulas correct the QT interval for heart rate. The RR interval
+    is in seconds (60/HR). QT is in milliseconds.
+    
+    Formulas:
+    1. Bazett: QTc = QT / sqrt(RR)
+       - Original formula, widely used but over-corrects at high HR
+       - Reference: Bazett HC. Heart 1920;7:353-370
+    
+    2. Fridericia: QTc = QT / cbrt(RR) 
+       - Most accurate across wide HR range (RECOMMENDED PRIMARY)
+       - Reference: Fridericia LS. Acta Med Scand 1920;54:467-486
+    
+    3. Hodges: QTc = QT + 1.75 × (HR - 60)
+       - Linear correction, good for extreme HR
+       - Reference: Hodges M. In: Noninvasive Electrocardiology 1992;61:405
+    
+    4. Framingham: QTc = QT + 0.154 × (1 - RR) × 1000
+       - Linear regression from Framingham cohort
+       - Reference: Sagie A et al. Circulation 1992;86:663-667
+    
+    Primary QTc Selection:
+    - Fridericia is used as the primary QTc for clinical decision-making
+    - Reason: Most accurate across the full range of heart rates
+    - Rationale: Bazett over-corrects at HR>100 and under-corrects at HR<60
+    """
+    bazett: float
+    fridericia: float
+    hodges: float
+    framingham: float
+    primary: float  # Fridericia (most accurate across HR range)
+    primary_formula: str = "Fridericia"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "bazett": round(self.bazett, 1),
+            "fridericia": round(self.fridericia, 1),
+            "hodges": round(self.hodges, 1),
+            "framingham": round(self.framingham, 1),
+            "primary": round(self.primary, 1),
+            "primary_formula": self.primary_formula,
+        }
+
+
 @dataclass
 class ECGInterval:
     """ECG interval measurement."""
@@ -68,15 +142,25 @@ class ECGInterval:
     normal_range: Tuple[float, float]
     is_normal: bool
     interpretation: str
+    qtc_formulas: Optional[QTcFormulas] = None  # Only for QTc intervals
+    qtc_status: Optional[QTcStatus] = None  # Gender-aware QTc status
+    gender: Optional[str] = None  # Patient gender for QTc interpretation
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "name": self.name,
-            "value_ms": self.value_ms,
+            "value_ms": round(self.value_ms, 1) if self.value_ms else None,
             "normal_range": list(self.normal_range),
             "is_normal": self.is_normal,
             "interpretation": self.interpretation,
         }
+        if self.qtc_formulas:
+            result["qtc_formulas"] = self.qtc_formulas.to_dict()
+        if self.qtc_status:
+            result["qtc_status"] = self.qtc_status.value
+        if self.gender:
+            result["gender"] = self.gender
+        return result
 
 
 @dataclass
@@ -162,11 +246,12 @@ class ECGAnalyzer:
     """
 
     # Normal interval ranges (ms)
+    # Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009 Recommendations
     INTERVAL_RANGES = {
         "PR": (120, 200),
-        "QRS": (80, 100),
-        "QT": (350, 450),  # QTc, varies by HR
-        "QTc": (350, 450),
+        "QRS": (70, 120),  # Fixed: Normal ≤120ms (was incorrectly 100ms)
+        "QT": (350, 450),  # QTc, varies by HR and gender
+        "QTc": (350, 450),  # Base range, gender-specific thresholds applied
     }
 
     # STEMI criteria by territory
@@ -254,9 +339,9 @@ class ECGAnalyzer:
         # Parse rhythm
         rhythm_type = self._parse_rhythm(rhythm, heart_rate)
 
-        # Analyze intervals
+        # Analyze intervals with gender-aware QTc calculation
         intervals = self._analyze_intervals(
-            pr_interval, qrs_duration, qt_interval, heart_rate
+            pr_interval, qrs_duration, qt_interval, heart_rate, patient_gender
         )
 
         # Analyze ST segments
@@ -359,8 +444,16 @@ class ECGAnalyzer:
         qrs: Optional[float],
         qt: Optional[float],
         hr: int,
+        gender: Optional[str] = None,
     ) -> List[ECGInterval]:
-        """Analyze ECG intervals."""
+        """
+        Analyze ECG intervals with evidence-based QTc calculation.
+        
+        Implements all four validated QTc formulas with gender-aware thresholds.
+        Uses Fridericia as primary formula (most accurate across HR range).
+        
+        Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009 Recommendations.
+        """
         intervals = []
 
         # PR interval
@@ -369,7 +462,7 @@ class ECGAnalyzer:
             if is_normal:
                 interp = "Normal PR interval"
             elif pr < self.INTERVAL_RANGES["PR"][0]:
-                interp = "Short PR interval - consider pre-excitation"
+                interp = "Short PR interval - consider pre-excitation (LGL, WPW)"
             else:
                 interp = "Prolonged PR interval - first-degree AV block"
 
@@ -381,17 +474,18 @@ class ECGAnalyzer:
                 interpretation=interp,
             ))
 
-        # QRS duration
+        # QRS duration - Fixed threshold: normal ≤120ms
+        # Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009
         if qrs is not None:
             is_normal = qrs <= self.INTERVAL_RANGES["QRS"][1]
             if is_normal:
                 interp = "Normal QRS duration"
             elif qrs <= 120:
-                interp = "Incomplete bundle branch block"
+                interp = "Normal QRS duration (upper limit 120ms)"
             elif qrs <= 140:
                 interp = "Incomplete bundle branch block or IVCD"
             else:
-                interp = "Wide QRS - consider BBB, hyperkalemia, or pacing"
+                interp = "Wide QRS - consider complete BBB, hyperkalemia, pacing, or VT"
 
             intervals.append(ECGInterval(
                 name="QRS",
@@ -401,28 +495,137 @@ class ECGAnalyzer:
                 interpretation=interp,
             ))
 
-        # QT interval (QTc)
+        # QT interval - Calculate QTc using all four validated formulas
+        # Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009
         if qt is not None and hr > 0:
-            # Calculate QTc using Bazett's formula
-            qtc = qt / math.sqrt(60 / hr)
-            is_normal = self.INTERVAL_RANGES["QTc"][0] <= qtc <= self.INTERVAL_RANGES["QTc"][1]
-
-            if is_normal:
-                interp = "Normal QTc"
-            elif qtc < self.INTERVAL_RANGES["QTc"][0]:
-                interp = "Short QTc - consider hypercalcemia, digoxin"
-            else:
-                interp = f"Prolonged QTc ({qtc:.0f}ms) - increased arrhythmia risk"
-
+            # Calculate RR interval in seconds
+            rr_seconds = 60.0 / hr
+            
+            # Calculate all four QTc formulas
+            # 1. Bazett: QTc = QT / sqrt(RR)
+            #    Over-corrects at high HR, under-corrects at low HR
+            qtc_bazett = qt / math.sqrt(rr_seconds)
+            
+            # 2. Fridericia: QTc = QT / cbrt(RR)
+            #    Most accurate across wide HR range - PRIMARY
+            qtc_fridericia = qt / (rr_seconds ** (1/3))
+            
+            # 3. Hodges: QTc = QT + 1.75 × (HR - 60)
+            #    Linear correction
+            qtc_hodges = qt + 1.75 * (hr - 60)
+            
+            # 4. Framingham: QTc = QT + 0.154 × (1 - RR) × 1000
+            #    Population-derived linear formula
+            qtc_framingham = qt + 0.154 * (1 - rr_seconds) * 1000
+            
+            # Create QTcFormulas object
+            qtc_formulas = QTcFormulas(
+                bazett=qtc_bazett,
+                fridericia=qtc_fridericia,
+                hodges=qtc_hodges,
+                framingham=qtc_framingham,
+                primary=qtc_fridericia,  # Fridericia is most accurate
+            )
+            
+            # Use Fridericia as primary QTc for clinical decisions
+            primary_qtc = qtc_fridericia
+            
+            # Determine QTc status with gender-aware thresholds
+            qtc_status = self._determine_qtc_status(primary_qtc, gender)
+            
+            # Generate interpretation
+            interp = self._generate_qtc_interpretation(
+                primary_qtc, qtc_status, qtc_formulas, gender
+            )
+            
+            # Determine if normal based on gender-specific thresholds
+            is_normal = qtc_status in [QTcStatus.NORMAL, QTcStatus.BORDERLINE]
+            
             intervals.append(ECGInterval(
                 name="QTc",
-                value_ms=qtc,
+                value_ms=primary_qtc,
                 normal_range=self.INTERVAL_RANGES["QTc"],
                 is_normal=is_normal,
                 interpretation=interp,
+                qtc_formulas=qtc_formulas,
+                qtc_status=qtc_status,
+                gender=gender,
             ))
 
         return intervals
+    
+    def _determine_qtc_status(
+        self, 
+        qtc: float, 
+        gender: Optional[str] = None
+    ) -> QTcStatus:
+        """
+        Determine QTc prolongation status using gender-specific thresholds.
+        
+        Reference: Rautaharju PM et al. AHA/ACCF/HRS 2009 Recommendations
+        for the Standardization and Interpretation of the Electrocardiogram.
+        J Am Coll Cardiol 2009;53:982-991.
+        
+        Thresholds:
+        - Critical (>500ms both sexes): High torsades de pointes risk
+        - Male: Normal ≤440ms, Borderline 441-450ms, Prolonged >450ms
+        - Female: Normal ≤450ms, Borderline 451-460ms, Prolonged >460ms
+        - Unknown gender: Use more conservative male thresholds
+        """
+        # Critical threshold applies to all
+        if qtc > 500:
+            return QTcStatus.CRITICAL
+        
+        # Apply gender-specific thresholds
+        if gender and gender.upper() == "F":
+            # Female thresholds (slightly longer normal range)
+            if qtc <= 450:
+                return QTcStatus.NORMAL
+            elif qtc <= 460:
+                return QTcStatus.BORDERLINE
+            else:
+                return QTcStatus.PROLONGED
+        else:
+            # Male thresholds (or unknown gender - use conservative)
+            if qtc <= 440:
+                return QTcStatus.NORMAL
+            elif qtc <= 450:
+                return QTcStatus.BORDERLINE
+            else:
+                return QTcStatus.PROLONGED
+    
+    def _generate_qtc_interpretation(
+        self,
+        primary_qtc: float,
+        qtc_status: QTcStatus,
+        qtc_formulas: QTcFormulas,
+        gender: Optional[str] = None,
+    ) -> str:
+        """Generate clinical interpretation for QTc interval."""
+        gender_str = f" ({gender.lower()})" if gender else ""
+        
+        if qtc_status == QTcStatus.NORMAL:
+            return f"Normal QTc{gender_str}: {primary_qtc:.0f}ms (Fridericia)"
+        
+        elif qtc_status == QTcStatus.BORDERLINE:
+            return f"Borderline QTc prolongation{gender_str}: {primary_qtc:.0f}ms. Monitor for drug effects."
+        
+        elif qtc_status == QTcStatus.PROLONGED:
+            return (
+                f"Prolonged QTc{gender_str}: {primary_qtc:.0f}ms. "
+                f"Review medications (QT-prolonging drugs), electrolytes (K+, Mg++, Ca++). "
+                f"Risk of arrhythmias."
+            )
+        
+        elif qtc_status == QTcStatus.CRITICAL:
+            return (
+                f"⚠️ CRITICAL QTc prolongation: {primary_qtc:.0f}ms! "
+                f"High risk of Torsades de Pointes. "
+                f"Discontinue QT-prolonging drugs immediately. "
+                f"Check electrolytes. Consider IV magnesium."
+            )
+        
+        return f"QTc: {primary_qtc:.0f}ms"
 
     def _analyze_st_segments(
         self,
@@ -709,9 +912,16 @@ class ECGAnalyzer:
         elif hr < 40:
             alerts.append(f"⚠️ Severe bradycardia: {hr} bpm")
 
+        # Generate QTc alerts using the new qtc_status field
         for interval in intervals:
-            if interval.name == "QTc" and interval.value_ms > 500:
-                alerts.append(f"⚠️ Markedly prolonged QTc: {interval.value_ms:.0f}ms")
+            if interval.name == "QTc":
+                if interval.qtc_status == QTcStatus.CRITICAL:
+                    alerts.append(
+                        f"🚨 CRITICAL QTc prolongation: {interval.value_ms:.0f}ms - "
+                        f"High risk of Torsades de Pointes!"
+                    )
+                elif interval.qtc_status == QTcStatus.PROLONGED:
+                    alerts.append(f"⚠️ Prolonged QTc: {interval.value_ms:.0f}ms")
 
         return alerts
 

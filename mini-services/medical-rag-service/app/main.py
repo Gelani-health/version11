@@ -32,6 +32,12 @@ P3 Enhancements:
 - Differential Diagnosis Engine
 - Pediatric Clinical Decision Support
 - Geriatric Assessment Module (Beers Criteria, Frailty)
+
+P4 Enhancements:
+- 12 Clinical Scoring Calculators (CHA2DS2-VASc, HAS-BLED, CURB-65, PERC,
+  Wells PE/DVT, NEWS2, SOFA, Glasgow-Blatchford, 4T Score, ASCVD, Child-Pugh)
+- Standardized API for clinical decision support
+- Evidence-based recommendations with citations
 """
 
 import asyncio
@@ -217,6 +223,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ===== Register Routers =====
+
+# P4: Clinical Calculators Router
+from app.api.calculators import router as calculators_router
+app.include_router(calculators_router)
 
 
 # ===== Audit Logging Middleware =====

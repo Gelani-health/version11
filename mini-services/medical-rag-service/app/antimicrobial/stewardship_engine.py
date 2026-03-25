@@ -22,6 +22,18 @@ from enum import Enum
 
 from loguru import logger
 
+# Import evidence-based allergy conflict checking
+from app.antimicrobial.allergy_conflict import (
+    check_allergy_conflict,
+    build_allergy_types_dict,
+    AllergyConflictResult,
+    AllergyType,
+    ConflictSeverity,
+    is_cephalosporin,
+    is_penicillin,
+    is_sulfa_drug,
+)
+
 
 class InfectionSite(Enum):
     """Common infection sites/sites of infection."""
@@ -657,23 +669,31 @@ class AntimicrobialStewardshipEngine:
         infection_type: str,
         severity: Severity = Severity.MODERATE,
         allergies: Optional[List[str]] = None,
+        allergy_types: Optional[Dict[str, str]] = None,
         renal_function: Optional[float] = None,  # CrCl in mL/min
         current_medications: Optional[List[str]] = None,
         pregnancy: bool = False,
     ) -> Dict[str, Any]:
         """
-        Get empiric antimicrobial recommendations.
+        Get empiric antimicrobial recommendations with evidence-based allergy checking.
         
         Args:
             infection_type: Key from EMPIRIC_THERAPY database
             severity: Infection severity
-            allergies: List of drug allergies
+            allergies: List of drug allergies (can include type: "penicillin:rash")
+            allergy_types: Dict mapping allergy name to type ("intolerance", "rash", "anaphylaxis", "unknown")
             renal_function: Creatinine clearance
             current_medications: Current medications for interaction check
             pregnancy: Is patient pregnant
         
         Returns:
-            Dictionary with recommendations
+            Dictionary with recommendations including allergy warnings
+            
+        Evidence-Based Allergy Checking:
+            - Cephalosporin cross-reactivity per Macy E et al. JAMA Intern Med 2014
+            - 1st gen: ~2% cross-reactivity with penicillin
+            - 2nd gen: ~1% cross-reactivity
+            - 3rd/4th/5th gen: <1% cross-reactivity (generally safe)
         """
         self.stats["total_recommendations"] += 1
         
@@ -687,18 +707,54 @@ class AntimicrobialStewardshipEngine:
         
         therapy = self.empiric_therapy[key]
         
-        # Process allergies
+        # Process allergies - build allergy types dict first
         allergies = allergies or []
-        safe_allergies = [a.lower() for a in allergies]
+        
+        # Build allergy types dict from input or parse from allergy strings
+        if allergy_types is None:
+            allergy_types = build_allergy_types_dict(allergies)
+        
+        # Get clean allergen names (without type suffix) for matching
+        # e.g., "penicillin:anaphylaxis" -> "penicillin"
+        clean_allergies = list(allergy_types.keys())
+        
+        # Collect all allergy warnings (even for non-blocked drugs)
+        all_allergy_warnings: List[Dict[str, Any]] = []
         
         # Check first-line recommendations
         first_line = []
         for rec in therapy.get("first_line", []):
             rec_dict = rec.to_dict()
             
-            # Check for allergy conflicts
-            if self._check_allergy_conflict(rec.drug_name, safe_allergies):
+            # Check for allergy conflicts using evidence-based logic
+            conflict = check_allergy_conflict(
+                drug_name=rec.drug_name,
+                allergies=clean_allergies,
+                allergy_types=allergy_types,
+            )
+            
+            # If blocked, skip this drug
+            if conflict.blocked:
+                all_allergy_warnings.append({
+                    "drug": rec.drug_name,
+                    "blocked": True,
+                    "reason": conflict.warning,
+                    "severity": conflict.severity.value,
+                })
                 continue
+            
+            # Add warning even if not blocked (for clinician awareness)
+            if conflict.warning:
+                rec_dict["allergy_warning"] = conflict.warning
+                rec_dict["allergy_severity"] = conflict.severity.value
+                rec_dict["cross_reactivity_risk"] = conflict.cross_reactivity_risk
+                all_allergy_warnings.append({
+                    "drug": rec.drug_name,
+                    "blocked": False,
+                    "warning": conflict.warning,
+                    "severity": conflict.severity.value,
+                    "cross_reactivity_risk": conflict.cross_reactivity_risk,
+                })
             
             # Apply renal dosing if needed
             if renal_function is not None and rec.renal_adjustment:
@@ -722,8 +778,20 @@ class AntimicrobialStewardshipEngine:
         for rec in therapy.get("alternatives", []):
             rec_dict = rec.to_dict()
             
-            if self._check_allergy_conflict(rec.drug_name, safe_allergies):
+            # Check for allergy conflicts using evidence-based logic
+            conflict = check_allergy_conflict(
+                drug_name=rec.drug_name,
+                allergies=clean_allergies,
+                allergy_types=allergy_types,
+            )
+            
+            if conflict.blocked:
                 continue
+            
+            # Add warning even if not blocked
+            if conflict.warning:
+                rec_dict["allergy_warning"] = conflict.warning
+                rec_dict["allergy_severity"] = conflict.severity.value
             
             if renal_function is not None and rec.renal_adjustment:
                 rec_dict["renal_dose"] = self._get_renal_dose(rec.drug_name, renal_function)
@@ -735,14 +803,23 @@ class AntimicrobialStewardshipEngine:
             "severity": severity.value,
             "first_line": first_line,
             "alternatives": alternatives,
+            "allergy_warnings": all_allergy_warnings,
             "recommendation_notes": self._generate_recommendation_notes(
                 infection_type, severity, allergies, renal_function
             ),
             "duration_guidance": self._get_duration_guidance(infection_type, severity),
         }
     
-    def _check_allergy_conflict(self, drug_name: str, allergies: List[str]) -> bool:
-        """Check if drug conflicts with allergies."""
+    def _check_allergy_conflict_legacy(self, drug_name: str, allergies: List[str]) -> bool:
+        """
+        DEPRECATED: Legacy allergy conflict check.
+        
+        This method is kept for backward compatibility but should not be used.
+        Use check_allergy_conflict() from allergy_conflict module instead.
+        
+        The legacy implementation incorrectly blocked ALL cephalosporins for ANY
+        penicillin allergy, which is not evidence-based.
+        """
         drug_lower = drug_name.lower()
         
         # Direct match
@@ -754,12 +831,6 @@ class AntimicrobialStewardshipEngine:
         beta_lactam_allergies = ["penicillin", "amoxicillin", "ampicillin", "cephalosporin", "cefazolin"]
         if any(a in drug_lower for a in ["penicillin", "amoxicillin", "ampicillin", "nafcillin", "oxacillin"]):
             if any(a in allergies for a in beta_lactam_allergies):
-                return True
-        
-        # Cephalosporin cross-reactivity (lower with newer generations)
-        if any(a in drug_lower for a in ["cef", "ceph"]):
-            if "penicillin" in allergies:
-                # Note: This is simplified - actual cross-reactivity is ~1-2% with 3rd/4th gen
                 return True
         
         # Sulfonamide

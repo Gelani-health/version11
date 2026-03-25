@@ -75,7 +75,7 @@ import { LLMIntegrationsSettings } from "@/components/llm/llm-integrations-setti
 import { AIModelFooter } from "@/components/ai-model-footer";
 import { AIModelSelector } from "@/components/ai-model-selector";
 import { KnowledgeBaseManagement } from "@/components/knowledge-base-management";
-import MedicalRAGDiagnostic from "@/components/medical-rag-diagnostic";
+
 import { SmartPatientIdentityDashboard } from "@/components/smart-patient-identity-dashboard";
 import { RAGIndicator } from "@/components/rag-indicator";
 import { RAGSettings } from "@/components/rag-settings";

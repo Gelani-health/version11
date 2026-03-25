@@ -1289,6 +1289,1372 @@ PRE_TEST_PROBABILITIES: Dict[str, Dict[str, Dict[str, Any]]] = {
 
 
 # =============================================================================
+# CLINICAL PRIOR DATABASE - PUBMED-ALIGNED EVIDENCE (PROMPT 6)
+# 8 Chief Complaint Clusters with Age/Sex Modifiers and PMID Citations
+# =============================================================================
+
+CLINICAL_PRIOR_DATABASE: Dict[str, Dict[str, Any]] = {
+    # ============================================================================
+    # CLUSTER: CHEST PAIN
+    # ============================================================================
+    "chest_pain": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Acute coronary syndrome",
+                "icd10": "I21.9",
+                "prior_probability": 0.15,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.05,
+                    "adult": 1.0,
+                    "elderly": 1.8
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.85
+                },
+                "evidence_pmids": ["16287956"],
+                "evidence_note": "Swap et al. 2005 - ED chest pain prevalence study"
+            },
+            {
+                "hypothesis": "Stable angina",
+                "icd10": "I20.9",
+                "prior_probability": 0.10,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.1,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pulmonary embolism",
+                "icd10": "I26.99",
+                "prior_probability": 0.05,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.1
+                },
+                "evidence_pmids": ["21422387"],
+                "evidence_note": "Pollack et al. 2011 - PIOPED II study"
+            },
+            {
+                "hypothesis": "Aortic dissection",
+                "icd10": "I71.00",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": ["10685714"],
+                "evidence_note": "Hagan et al. 2000 - IRAD registry"
+            },
+            {
+                "hypothesis": "Musculoskeletal chest pain",
+                "icd10": "M79.3",
+                "prior_probability": 0.30,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.6
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["8012355"],
+                "evidence_note": "Klinkman et al. 1994 - Primary care chest pain study"
+            },
+            {
+                "hypothesis": "GERD/esophageal",
+                "icd10": "K21.0",
+                "prior_probability": 0.20,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pericarditis",
+                "icd10": "I30.9",
+                "prior_probability": 0.05,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.8
+                },
+                "evidence_pmids": ["15337495"],
+                "evidence_note": "Imazio et al. 2004 - Pericarditis clinical features"
+            },
+            {
+                "hypothesis": "Pneumothorax",
+                "icd10": "J93.9",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 2.0,
+                    "F": 0.5
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anxiety/panic",
+                "icd10": "F41.0",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.3,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: FEVER AND COUGH
+    # ============================================================================
+    "fever_and_cough": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Community-acquired pneumonia",
+                "icd10": "J18.9",
+                "prior_probability": 0.20,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.3,
+                    "adult": 1.0,
+                    "elderly": 1.6
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["17278083"],
+                "evidence_note": "Mandell et al. IDSA/ATS 2007 - CAP guidelines"
+            },
+            {
+                "hypothesis": "Viral upper respiratory infection",
+                "icd10": "J06.9",
+                "prior_probability": 0.35,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.7
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Influenza",
+                "icd10": "J11.1",
+                "prior_probability": 0.15,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.3,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "COVID-19",
+                "icd10": "U07.1",
+                "prior_probability": 0.10,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Acute bronchitis",
+                "icd10": "J20.9",
+                "prior_probability": 0.12,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pulmonary tuberculosis",
+                "icd10": "A15.0",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.8
+                },
+                "evidence_pmids": [],
+                "evidence_note": "Isolation precaution required"
+            },
+            {
+                "hypothesis": "Lung abscess",
+                "icd10": "J85.1",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Sepsis of pulmonary origin",
+                "icd10": "A41.9",
+                "prior_probability": 0.03,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["26903338"],
+                "evidence_note": "Singer et al. Sepsis-3 2016 - Sepsis definitions"
+            },
+            {
+                "hypothesis": "Acute exacerbation COPD",
+                "icd10": "J44.1",
+                "prior_probability": 0.05,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.3,
+                    "F": 0.8
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: HEADACHE
+    # ============================================================================
+    "headache": {
+        "cluster_critical": False,
+        "red_flag_multipliers": {
+            "subarachnoid_hemorrhage": {
+                "keywords": ["worst", "thunderclap", "sudden onset", "worst of my life", "never had before"],
+                "multiplier": 8.0
+            }
+        },
+        "diagnoses": [
+            {
+                "hypothesis": "Tension-type headache",
+                "icd10": "G44.209",
+                "prior_probability": 0.38,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.7,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 0.8,
+                    "F": 1.2
+                },
+                "evidence_pmids": ["17381554"],
+                "evidence_note": "Stovner et al. 2007 - Global headache prevalence"
+            },
+            {
+                "hypothesis": "Migraine",
+                "icd10": "G43.909",
+                "prior_probability": 0.28,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 0.6,
+                    "F": 1.4
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Subarachnoid hemorrhage",
+                "icd10": "I60.9",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 0.8,
+                    "F": 1.2
+                },
+                "evidence_pmids": ["21471930"],
+                "evidence_note": "Perry et al. 2011 - SAH clinical decision rules"
+            },
+            {
+                "hypothesis": "Meningitis",
+                "icd10": "G03.9",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 2.0,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["15084697"],
+                "evidence_note": "van de Beek et al. 2004 - Community-acquired meningitis"
+            },
+            {
+                "hypothesis": "Hypertensive urgency",
+                "icd10": "I16.0",
+                "prior_probability": 0.05,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.2,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Cluster headache",
+                "icd10": "G44.009",
+                "prior_probability": 0.04,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 3.0,
+                    "F": 0.4
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Cervicogenic headache",
+                "icd10": "M54.81",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 0.8,
+                    "F": 1.2
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Intracranial mass effect",
+                "icd10": "G93.89",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Post-viral/COVID headache",
+                "icd10": "G44.309",
+                "prior_probability": 0.06,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 0.8,
+                    "F": 1.2
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: ABDOMINAL PAIN
+    # ============================================================================
+    "abdominal_pain": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Irritable bowel syndrome",
+                "icd10": "K58.9",
+                "prior_probability": 0.25,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 0.6
+                },
+                "sex_modifiers": {
+                    "M": 0.6,
+                    "F": 1.4
+                },
+                "evidence_pmids": ["22522488"],
+                "evidence_note": "Lovell & Ford 2012 - IBS global prevalence"
+            },
+            {
+                "hypothesis": "Gastroenteritis",
+                "icd10": "A09",
+                "prior_probability": 0.18,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Appendicitis",
+                "icd10": "K37",
+                "prior_probability": 0.07,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 1.3,
+                    "F": 0.8
+                },
+                "evidence_pmids": ["2296071"],
+                "evidence_note": "Addiss et al. 1990 - Appendicitis epidemiology"
+            },
+            {
+                "hypothesis": "Biliary colic/cholecystitis",
+                "icd10": "K80.20",
+                "prior_probability": 0.10,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 0.6,
+                    "F": 1.4
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Peptic ulcer disease",
+                "icd10": "K27.9",
+                "prior_probability": 0.06,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Mesenteric ischemia",
+                "icd10": "K55.019",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 3.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Ectopic pregnancy",
+                "icd10": "O00.9",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.0,
+                    "adult": 1.0,
+                    "elderly": 0.0
+                },
+                "sex_modifiers": {
+                    "M": 0.0,
+                    "F": 1.0
+                },
+                "sex_age_gate": {
+                    "sex": "F",
+                    "age_min": 15,
+                    "age_max": 50
+                },
+                "evidence_pmids": [],
+                "evidence_note": "SEX/AGE GATE: only F age 15-50, else prior=0.0"
+            },
+            {
+                "hypothesis": "Renal colic/urolithiasis",
+                "icd10": "N20.0",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Diverticulitis",
+                "icd10": "K57.32",
+                "prior_probability": 0.06,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": "Elderly modifier: 2.0"
+            },
+            {
+                "hypothesis": "Bowel obstruction",
+                "icd10": "K56.609",
+                "prior_probability": 0.04,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: DYSPNEA
+    # ============================================================================
+    "dyspnea": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Acute heart failure",
+                "icd10": "I50.9",
+                "prior_probability": 0.15,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.2,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["12124404"],
+                "evidence_note": "Maisel et al. 2002 - BNP for HF diagnosis"
+            },
+            {
+                "hypothesis": "Pulmonary embolism",
+                "icd10": "I26.99",
+                "prior_probability": 0.08,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.1
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Asthma exacerbation",
+                "icd10": "J45.901",
+                "prior_probability": 0.14,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 2.0,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.2
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "COPD exacerbation",
+                "icd10": "J44.1",
+                "prior_probability": 0.12,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pneumonia",
+                "icd10": "J18.9",
+                "prior_probability": 0.12,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.3,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anxiety/hyperventilation",
+                "icd10": "F41.0",
+                "prior_probability": 0.10,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anemia",
+                "icd10": "D64.9",
+                "prior_probability": 0.07,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pneumothorax",
+                "icd10": "J93.9",
+                "prior_probability": 0.03,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 2.0,
+                    "F": 0.5
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Cardiac tamponade",
+                "icd10": "I31.9",
+                "prior_probability": 0.01,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anaphylaxis",
+                "icd10": "T78.2",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: ALTERED MENTAL STATUS
+    # ============================================================================
+    "altered_mental_status": {
+        "cluster_critical": True,  # Urgent review banner
+        "diagnoses": [
+            {
+                "hypothesis": "Septic encephalopathy",
+                "icd10": "G93.41",
+                "prior_probability": 0.20,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": ["8769277"],
+                "evidence_note": "Eidelman et al. 1996 - Septic encephalopathy review"
+            },
+            {
+                "hypothesis": "Hypoglycemia",
+                "icd10": "E11.641",
+                "prior_probability": 0.12,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Stroke/TIA",
+                "icd10": "I63.9",
+                "prior_probability": 0.10,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Intoxication/overdose",
+                "icd10": "T65.91",
+                "prior_probability": 0.12,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Hypertensive encephalopathy",
+                "icd10": "I67.4",
+                "prior_probability": 0.05,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Meningitis/encephalitis",
+                "icd10": "G03.9",
+                "prior_probability": 0.06,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 2.0,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Postictal state",
+                "icd10": "G40.909",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Uremic encephalopathy",
+                "icd10": "N19",
+                "prior_probability": 0.05,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Hepatic encephalopathy",
+                "icd10": "K72.90",
+                "prior_probability": 0.05,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Wernicke encephalopathy",
+                "icd10": "E51.2",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.2,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": ["12220205"],
+                "evidence_note": "Thomson et al. 2002 - Wernicke encephalopathy review"
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: PALPITATIONS
+    # ============================================================================
+    "palpitations": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Benign ectopic beats (PAC/PVC)",
+                "icd10": "I49.9",
+                "prior_probability": 0.35,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Atrial fibrillation",
+                "icd10": "I48.91",
+                "prior_probability": 0.15,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 2.5
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": ["23608164"],
+                "evidence_note": "Colilla et al. 2013 - AF prevalence estimates"
+            },
+            {
+                "hypothesis": "SVT",
+                "icd10": "I47.1",
+                "prior_probability": 0.12,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.7
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Ventricular tachycardia",
+                "icd10": "I47.2",
+                "prior_probability": 0.04,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Wolff-Parkinson-White",
+                "icd10": "I45.6",
+                "prior_probability": 0.02,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 2.0,
+                    "adult": 1.0,
+                    "elderly": 0.3
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anxiety",
+                "icd10": "F41.9",
+                "prior_probability": 0.15,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.5
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Hyperthyroidism",
+                "icd10": "E05.90",
+                "prior_probability": 0.07,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 0.7
+                },
+                "sex_modifiers": {
+                    "M": 0.4,
+                    "F": 1.5
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Anemia",
+                "icd10": "D64.9",
+                "prior_probability": 0.05,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 0.7,
+                    "F": 1.3
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Drug-induced (stimulants, QTc)",
+                "icd10": "T46.5",
+                "prior_probability": 0.04,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.8,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    },
+    
+    # ============================================================================
+    # CLUSTER: SYNCOPE OR PRESYNCOPE
+    # ============================================================================
+    "syncope_or_presyncope": {
+        "cluster_critical": False,
+        "diagnoses": [
+            {
+                "hypothesis": "Vasovagal syncope",
+                "icd10": "R55",
+                "prior_probability": 0.40,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 0.6
+                },
+                "sex_modifiers": {
+                    "M": 0.8,
+                    "F": 1.2
+                },
+                "evidence_pmids": ["12370299"],
+                "evidence_note": "Soteriades et al. 2002 - Syncope epidemiology"
+            },
+            {
+                "hypothesis": "Orthostatic hypotension",
+                "icd10": "I95.1",
+                "prior_probability": 0.15,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Cardiac arrhythmia",
+                "icd10": "I49.9",
+                "prior_probability": 0.10,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.5,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Structural cardiac (HCM, AS)",
+                "icd10": "I42.1",
+                "prior_probability": 0.04,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 1.5
+                },
+                "sex_modifiers": {
+                    "M": 1.2,
+                    "F": 0.9
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Pulmonary embolism",
+                "icd10": "I26.99",
+                "prior_probability": 0.03,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 0.3,
+                    "adult": 1.0,
+                    "elderly": 1.3
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.1
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Seizure (mimicking syncope)",
+                "icd10": "G40.909",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.2,
+                    "adult": 1.0,
+                    "elderly": 0.8
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Situational syncope",
+                "icd10": "G90.3",
+                "prior_probability": 0.08,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 1.0,
+                    "adult": 1.0,
+                    "elderly": 1.0
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Carotid sinus hypersensitivity",
+                "icd10": "G90.09",
+                "prior_probability": 0.04,
+                "is_critical": False,
+                "age_modifiers": {
+                    "pediatric": 0.1,
+                    "adult": 1.0,
+                    "elderly": 2.0
+                },
+                "sex_modifiers": {
+                    "M": 1.5,
+                    "F": 0.7
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            },
+            {
+                "hypothesis": "Hypoglycemia",
+                "icd10": "E11.641",
+                "prior_probability": 0.04,
+                "is_critical": True,
+                "age_modifiers": {
+                    "pediatric": 1.5,
+                    "adult": 1.0,
+                    "elderly": 1.2
+                },
+                "sex_modifiers": {
+                    "M": 1.0,
+                    "F": 1.0
+                },
+                "evidence_pmids": [],
+                "evidence_note": ""
+            }
+        ]
+    }
+}
+
+
+# =============================================================================
 # COMPREHENSIVE CONDITIONAL LIKELIHOOD RATIO DATABASE
 # 200+ Tests with Conditional LRs per Hypothesis
 # =============================================================================
@@ -3457,6 +4823,278 @@ class BayesianDiagnosticEngine:
             del self.sessions[session_id]
             return True
         return False
+
+
+# =============================================================================
+# CLINICAL PRIOR FUNCTIONS (PROMPT 6)
+# =============================================================================
+
+def match_complaint_to_cluster(chief_complaint: str) -> str:
+    """
+    Match a chief complaint string to the most appropriate cluster.
+    
+    Uses keyword matching to score each cluster and returns the highest-scoring one.
+    Falls back to 'fever_and_cough' as the safest default.
+    NEVER returns R69 or any ICD code as fallback.
+    
+    Args:
+        chief_complaint: The patient's chief complaint string
+        
+    Returns:
+        The cluster name string (e.g., 'chest_pain', 'headache')
+    """
+    if not chief_complaint:
+        return "fever_and_cough"  # Safest default
+    
+    # Lowercase and tokenize
+    complaint_lower = chief_complaint.lower()
+    tokens = set(complaint_lower.split())
+    
+    # Add multi-word phrases
+    for phrase in ["chest pain", "shortness of breath", "left arm", "passed out", 
+                   "worst headache", "worst of my life", "never had before", 
+                   "sudden onset", "loss of consciousness", "fast heart", 
+                   "racing heart", "irregular heartbeat", "skipping beats"]:
+        if phrase in complaint_lower:
+            tokens.add(phrase)
+    
+    # Cluster keyword definitions
+    # Note: Order matters for tie-breaking when scores are equal
+    cluster_keywords = {
+        "chest_pain": {
+            "chest", "pectoral", "sternal", "precordial", "cardiac", 
+            "left arm", "jaw", "substernal"
+        },
+        "fever_and_cough": {
+            "fever", "cough", "sputum", "productive", "temperature", "chills", 
+            "rigors", "respiratory", "flu", "influenza", "cold"
+        },
+        "headache": {
+            "headache", "head pain", "migraine", "cephalgia", "scalp",
+            "worst headache", "thunderclap"
+        },
+        "abdominal_pain": {
+            "abdomen", "abdominal", "stomach", "belly", "nausea", "vomiting", 
+            "epigastric", "periumbilical", "flank", "groin", "rlq", "ruq", 
+            "llq", "luq"
+        },
+        "dyspnea": {
+            "breath", "breathing", "dyspnea", "shortness", "sob", "wheeze", 
+            "wheezing", "shortness of breath", "air hunger", "suffocating"
+        },
+        "altered_mental_status": {
+            "confused", "confusion", "altered", "disoriented", "unresponsive", 
+            "drowsy", "lethargic", "ams", "agitated", "delirium", "encephalopathy"
+        },
+        "palpitations": {
+            "palpitations", "racing heart", "fast heart", "irregular heartbeat", 
+            "skipping", "flutter", "heart racing", "heartbeat", "skipped beat",
+            "heart", "cardiac arrhythmia"
+        },
+        "syncope_or_presyncope": {
+            "faint", "fainting", "syncope", "passed out", "blackout", "presyncope", 
+            "dizzy", "lightheaded", "loss of consciousness", "near faint"
+        }
+    }
+    
+    # Score each cluster
+    scores = {}
+    for cluster, keywords in cluster_keywords.items():
+        score = len(tokens.intersection(keywords))
+        scores[cluster] = score
+    
+    # Find highest scoring cluster
+    max_score = max(scores.values())
+    
+    if max_score == 0:
+        return "fever_and_cough"  # Safest default when no keywords match
+    
+    # Return cluster with highest score
+    for cluster, score in scores.items():
+        if score == max_score:
+            return cluster
+    
+    return "fever_and_cough"
+
+
+def update_posteriors(
+    priors: List[Dict[str, Any]], 
+    clinical_findings: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """
+    Update posterior probabilities based on clinical findings.
+    
+    Applies:
+    - Age and sex modifiers from prior dict
+    - Red flag keyword multipliers (e.g., SAH thunderclap)
+    - Sex/age gates (e.g., ectopic pregnancy)
+    - Normalizes posteriors to sum to 1.0
+    - Sorts by posterior descending
+    - NEVER drops is_critical=True hypotheses
+    - Marks forced_inclusion: true for retained critical diagnoses
+    
+    Args:
+        priors: List of prior probability dicts from CLINICAL_PRIOR_DATABASE
+        clinical_findings: Dict with patient info and clinical data, including:
+            - patient: {age: int, sex: "M" or "F"}
+            - chief_complaint: str (for red flag keyword detection)
+            
+    Returns:
+        List of hypothesis dicts with posterior_probability, forced_inclusion, and rank
+    """
+    if not priors:
+        return []
+    
+    patient = clinical_findings.get("patient", {})
+    age = patient.get("age")
+    sex = patient.get("sex", "").upper()
+    chief_complaint = clinical_findings.get("chief_complaint", "").lower()
+    
+    # Determine age bracket
+    if age is not None:
+        if age < 18:
+            age_bracket = "pediatric"
+        elif age >= 65:
+            age_bracket = "elderly"
+        else:
+            age_bracket = "adult"
+    else:
+        age_bracket = "adult"  # Default to adult if age unknown
+    
+    updated_priors = []
+    critical_hypotheses = []
+    gated_out_hypotheses = set()  # Track hypotheses explicitly excluded by sex/age gates
+    
+    for prior in priors:
+        hypothesis = prior.copy()
+        base_prob = prior.get("prior_probability", 0.0)
+        
+        # Apply sex/age gate (e.g., ectopic pregnancy)
+        sex_age_gate = prior.get("sex_age_gate")
+        if sex_age_gate:
+            gate_sex = sex_age_gate.get("sex")
+            gate_age_min = sex_age_gate.get("age_min", 0)
+            gate_age_max = sex_age_gate.get("age_max", 200)
+            
+            if sex != gate_sex:
+                base_prob = 0.0
+                gated_out_hypotheses.add(prior.get("hypothesis", ""))
+            elif age is not None and (age < gate_age_min or age > gate_age_max):
+                base_prob = 0.0
+                gated_out_hypotheses.add(prior.get("hypothesis", ""))
+        
+        # Apply age modifier
+        age_modifiers = prior.get("age_modifiers", {})
+        if age_bracket in age_modifiers:
+            base_prob *= age_modifiers[age_bracket]
+        
+        # Apply sex modifier
+        sex_modifiers = prior.get("sex_modifiers", {})
+        if sex in sex_modifiers:
+            base_prob *= sex_modifiers[sex]
+        
+        # Apply red flag keyword multipliers (check in CLINICAL_PRIOR_DATABASE cluster)
+        # This is handled at the cluster level, but we can also check hypothesis-level keywords
+        hypothesis_name = prior.get("hypothesis", "").lower()
+        
+        # SAH thunderclap multiplier
+        if "subarachnoid" in hypothesis_name:
+            red_flag_keywords = ["worst", "thunderclap", "sudden onset", 
+                                "worst of my life", "never had before"]
+            for keyword in red_flag_keywords:
+                if keyword in chief_complaint:
+                    base_prob *= 8.0
+                    break
+        
+        hypothesis["adjusted_prior"] = base_prob
+        hypothesis["posterior_probability"] = base_prob
+        
+        # Track critical hypotheses
+        if prior.get("is_critical", False):
+            critical_hypotheses.append(hypothesis)
+        
+        updated_priors.append(hypothesis)
+    
+    # Normalize posteriors to sum to 1.0
+    total_prob = sum(h["posterior_probability"] for h in updated_priors)
+    
+    if total_prob > 0:
+        for h in updated_priors:
+            h["posterior_probability"] = h["posterior_probability"] / total_prob
+    
+    # Sort by posterior descending
+    updated_priors.sort(key=lambda x: x["posterior_probability"], reverse=True)
+    
+    # Ensure critical hypotheses are never dropped
+    # EXCEPTION: Hypotheses gated out by sex/age gates stay at 0.0
+    # If a critical hypothesis has 0.0 probability after normalization, 
+    # force it back in with minimum threshold (unless gated out)
+    for h in updated_priors:
+        hypothesis_name = h.get("hypothesis", "")
+        is_gated_out = hypothesis_name in gated_out_hypotheses
+        
+        if h.get("is_critical", False) and h["posterior_probability"] < 0.001 and not is_gated_out:
+            h["posterior_probability"] = 0.001
+            h["forced_inclusion"] = True
+        else:
+            h["forced_inclusion"] = False
+    
+    # Re-normalize after potentially forcing critical hypotheses
+    total_prob = sum(h["posterior_probability"] for h in updated_priors)
+    if total_prob > 0:
+        for h in updated_priors:
+            h["posterior_probability"] = h["posterior_probability"] / total_prob
+    
+    # Re-sort after normalization
+    updated_priors.sort(key=lambda x: x["posterior_probability"], reverse=True)
+    
+    # Add rank field
+    for i, h in enumerate(updated_priors):
+        h["rank"] = i + 1
+    
+    # Format output according to schema
+    result = []
+    for h in updated_priors:
+        result.append({
+            "hypothesis": h.get("hypothesis", ""),
+            "icd10": h.get("icd10", ""),
+            "posterior_probability": h.get("posterior_probability", 0.0),
+            "is_critical": h.get("is_critical", False),
+            "forced_inclusion": h.get("forced_inclusion", False),
+            "evidence_pmids": h.get("evidence_pmids", []),
+            "evidence_note": h.get("evidence_note", ""),
+            "rank": h.get("rank", 0)
+        })
+    
+    return result
+
+
+def get_cluster_priors(cluster_name: str) -> List[Dict[str, Any]]:
+    """
+    Get the list of diagnosis priors for a given cluster.
+    
+    Args:
+        cluster_name: Name of the cluster (e.g., 'chest_pain')
+        
+    Returns:
+        List of diagnosis dicts from CLINICAL_PRIOR_DATABASE
+    """
+    cluster = CLINICAL_PRIOR_DATABASE.get(cluster_name, {})
+    return cluster.get("diagnoses", [])
+
+
+def is_cluster_critical(cluster_name: str) -> bool:
+    """
+    Check if a cluster requires urgent review banner.
+    
+    Args:
+        cluster_name: Name of the cluster
+        
+    Returns:
+        True if cluster is critical, False otherwise
+    """
+    cluster = CLINICAL_PRIOR_DATABASE.get(cluster_name, {})
+    return cluster.get("cluster_critical", False)
 
 
 # =============================================================================

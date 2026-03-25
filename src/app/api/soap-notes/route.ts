@@ -6,12 +6,27 @@
  * - POST: soap_note:write
  * 
  * Audit trail is maintained for all PHI access.
+ * 
+ * Schema Improvements (Phase 4):
+ * - Differential diagnoses are now stored in a separate table
+ * - Proper relations with database constraints
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit-service';
 import { authenticateRequest, AuthenticatedUser, checkPermission } from '@/lib/auth-middleware';
+
+// Differential diagnosis interface
+interface DifferentialDiagnosisInput {
+  rank: number;
+  icdCode?: string;
+  description: string;
+  confidence?: number;
+  reasoning?: string;
+  status?: string;
+  icdVersion?: string;
+}
 
 /**
  * GET /api/soap-notes - List SOAP notes
@@ -45,6 +60,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const limit = parseInt(searchParams.get('limit') || '50');
+    const includeDifferentials = searchParams.get('includeDifferentials') !== 'false';
 
     const where: Record<string, unknown> = {};
 
@@ -83,6 +99,11 @@ export async function GET(request: NextRequest) {
           },
         },
         vitals: true,
+        ...(includeDifferentials ? {
+          differentialDiagnoses: {
+            orderBy: { rank: 'asc' },
+          },
+        } : {}),
       },
     });
 
@@ -180,9 +201,12 @@ export async function POST(request: NextRequest) {
       peSkin,
       diagnosticResults,
       functionalAssessment,
-      // Assessment
+      // Assessment - Primary Diagnosis
       primaryDiagnosisCode,
       primaryDiagnosisDesc,
+      // New: Differential Diagnoses array (normalized)
+      differentialDiagnoses,
+      // Legacy: Differential fields for backward compatibility
       differential1Code,
       differential1Desc,
       differential1Confidence,
@@ -238,6 +262,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Build differential diagnoses data
+    let differentialsData: DifferentialDiagnosisInput[] = [];
+    
+    // Use new array format if provided
+    if (differentialDiagnoses && Array.isArray(differentialDiagnoses)) {
+      differentialsData = differentialDiagnoses.map((d: DifferentialDiagnosisInput, index: number) => ({
+        rank: d.rank || index + 1,
+        icdCode: d.icdCode || null,
+        description: d.description,
+        confidence: d.confidence || null,
+        reasoning: d.reasoning || null,
+        status: d.status || 'considering',
+        icdVersion: d.icdVersion || 'ICD-10',
+      }));
+    } else {
+      // Convert legacy format to new array format
+      const legacyDifferentials = [
+        { rank: 1, code: differential1Code, desc: differential1Desc, conf: differential1Confidence },
+        { rank: 2, code: differential2Code, desc: differential2Desc, conf: differential2Confidence },
+        { rank: 3, code: differential3Code, desc: differential3Desc, conf: differential3Confidence },
+        { rank: 4, code: differential4Code, desc: differential4Desc, conf: differential4Confidence },
+        { rank: 5, code: differential5Code, desc: differential5Desc, conf: differential5Confidence },
+      ];
+
+      for (const d of legacyDifferentials) {
+        if (d.code || d.desc) {
+          differentialsData.push({
+            rank: d.rank,
+            icdCode: d.code || null,
+            description: d.desc || '',
+            confidence: typeof d.conf === 'number' ? d.conf : null,
+            status: 'considering',
+            icdVersion: 'ICD-10',
+          });
+        }
+      }
+    }
+
     // Create SOAP note with authenticated user as creator
     const soapNote = await db.soapNote.create({
       data: {
@@ -288,24 +350,9 @@ export async function POST(request: NextRequest) {
         peSkin,
         diagnosticResults,
         functionalAssessment,
-        // Assessment
+        // Assessment - Primary Diagnosis
         primaryDiagnosisCode,
         primaryDiagnosisDesc,
-        differential1Code,
-        differential1Desc,
-        differential1Confidence,
-        differential2Code,
-        differential2Desc,
-        differential2Confidence,
-        differential3Code,
-        differential3Desc,
-        differential3Confidence,
-        differential4Code,
-        differential4Desc,
-        differential4Confidence,
-        differential5Code,
-        differential5Desc,
-        differential5Confidence,
         clinicalReasoning,
         problemListUpdates,
         riskFlags,
@@ -326,6 +373,23 @@ export async function POST(request: NextRequest) {
         status: 'draft',
         aiSuggestionsUsed: aiSuggestionsUsed || false,
         aiConfidence,
+        // Create differential diagnoses
+        differentialDiagnoses: differentialsData.length > 0 ? {
+          create: differentialsData.map(d => ({
+            rank: d.rank,
+            icdCode: d.icdCode,
+            description: d.description,
+            confidence: d.confidence,
+            reasoning: d.reasoning,
+            status: d.status,
+            icdVersion: d.icdVersion,
+          })),
+        } : undefined,
+      },
+      include: {
+        differentialDiagnoses: {
+          orderBy: { rank: 'asc' },
+        },
       },
     });
 
@@ -374,7 +438,7 @@ async function logPHIAccess(
   action: string,
   resource: string,
   resourceId: string | number,
-  details?: any
+  details?: unknown
 ): Promise<void> {
   try {
     await db.aIInteraction.create({

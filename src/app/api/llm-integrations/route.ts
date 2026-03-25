@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { encryptApiKey, decryptApiKey, isEncrypted } from "@/lib/encryption";
 
 // LLM Integrations API - Single Source of Truth for AI Providers
 // Supports full CRUD operations with the updated schema
+// API Keys are encrypted with AES-256-GCM
 
 // Provider types with their default configurations
 const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; models: string[] }> = {
@@ -18,8 +20,10 @@ const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; models: string[] }> =
 // Helper function to mask API key (show only last 4 characters)
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
-  if (apiKey.length <= 4) return "••••";
-  return "••••" + apiKey.slice(-4);
+  // Decrypt first if encrypted
+  const decryptedKey = isEncrypted(apiKey) ? decryptApiKey(apiKey) : apiKey;
+  if (!decryptedKey || decryptedKey.length <= 4) return "••••";
+  return "••••" + decryptedKey.slice(-4);
 }
 
 // Helper function to prepare integration response with masked sensitive data
@@ -48,6 +52,7 @@ function prepareIntegrationResponse(integration: {
     ...integration,
     apiKey: maskApiKey(integration.apiKey),
     password: integration.password ? "••••••••" : null, // Always mask password
+    hasApiKey: !!integration.apiKey, // Indicate if API key is set
     providerDefaults: PROVIDER_DEFAULTS[integration.provider],
   };
 }
@@ -175,6 +180,9 @@ export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUse
       });
     }
 
+    // Encrypt API key before storing
+    const encryptedApiKey = apiKey ? encryptApiKey(apiKey) : null;
+
     const integration = await db.lLMIntegration.create({
       data: {
         provider,
@@ -182,7 +190,7 @@ export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUse
         baseUrl: baseUrl || PROVIDER_DEFAULTS[provider]?.baseUrl || null,
         username: username || null,
         password: password || null,
-        apiKey: apiKey || null,
+        apiKey: encryptedApiKey,
         model,
         isActive: isActive ?? true,
         isDefault: isDefault ?? false,
@@ -259,7 +267,20 @@ export const PUT = withAuth(async (request: NextRequest, user: AuthenticatedUser
     if (updateData.baseUrl !== undefined) data.baseUrl = updateData.baseUrl;
     if (updateData.username !== undefined) data.username = updateData.username;
     if (updateData.password !== undefined) data.password = updateData.password;
-    if (updateData.apiKey !== undefined) data.apiKey = updateData.apiKey;
+    
+    // Encrypt API key if provided and different from existing
+    if (updateData.apiKey !== undefined) {
+      // If apiKey is masked (starts with ••••), keep existing
+      if (typeof updateData.apiKey === 'string' && updateData.apiKey.startsWith('••••')) {
+        // Keep existing encrypted key
+      } else if (updateData.apiKey) {
+        // Encrypt new API key
+        data.apiKey = encryptApiKey(updateData.apiKey);
+      } else {
+        data.apiKey = null;
+      }
+    }
+    
     if (updateData.model !== undefined) data.model = updateData.model;
     if (updateData.isActive !== undefined) data.isActive = updateData.isActive;
     if (updateData.isDefault !== undefined) data.isDefault = updateData.isDefault;

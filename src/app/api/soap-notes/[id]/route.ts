@@ -6,6 +6,10 @@
  * - PUT: soap_note:write
  * 
  * Audit trail is maintained for all PHI access.
+ * 
+ * Schema Improvements (Phase 4):
+ * - Differential diagnoses are now stored in a separate table
+ * - Proper relations with database constraints
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,6 +19,18 @@ import { authenticateRequest, AuthenticatedUser, checkPermission } from '@/lib/a
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+// Differential diagnosis interface
+interface DifferentialDiagnosisInput {
+  id?: string;
+  rank: number;
+  icdCode?: string;
+  description: string;
+  confidence?: number;
+  reasoning?: string;
+  status?: string;
+  icdVersion?: string;
 }
 
 /**
@@ -86,6 +102,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
         vitals: true,
+        differentialDiagnoses: {
+          orderBy: { rank: 'asc' },
+        },
         addenda: {
           include: {
             author: {
@@ -182,7 +201,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Get existing SOAP note
     const existingNote = await db.soapNote.findUnique({
       where: { id },
-      include: { patient: { select: { mrn: true } } },
+      include: { 
+        patient: { select: { mrn: true } },
+        differentialDiagnoses: true,
+      },
     });
 
     if (!existingNote) {
@@ -200,17 +222,50 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const { lastEditedBy, ...updateData } = body;
+    // Extract differential diagnoses from body
+    const { differentialDiagnoses, ...updateData } = body;
 
-    // Update SOAP note with authenticated user as editor
-    const updatedNote = await db.soapNote.update({
-      where: { id },
-      data: {
-        ...updateData,
-        lastEditedBy: user.employeeId,
-        lockVersion: { increment: 1 },
-        updatedAt: new Date(),
-      },
+    // Use transaction to update SOAP note and differentials atomically
+    const updatedNote = await db.$transaction(async (tx) => {
+      // Update differential diagnoses if provided
+      if (differentialDiagnoses && Array.isArray(differentialDiagnoses)) {
+        // Delete existing differentials
+        await tx.differentialDiagnosis.deleteMany({
+          where: { soapNoteId: id },
+        });
+
+        // Create new differentials
+        if (differentialDiagnoses.length > 0) {
+          await tx.differentialDiagnosis.createMany({
+            data: differentialDiagnoses.map((d: DifferentialDiagnosisInput, index: number) => ({
+              soapNoteId: id,
+              rank: d.rank || index + 1,
+              icdCode: d.icdCode || null,
+              description: d.description,
+              confidence: d.confidence || null,
+              reasoning: d.reasoning || null,
+              status: d.status || 'considering',
+              icdVersion: d.icdVersion || 'ICD-10',
+            })),
+          });
+        }
+      }
+
+      // Update SOAP note with authenticated user as editor
+      return tx.soapNote.update({
+        where: { id },
+        data: {
+          ...updateData,
+          lastEditedBy: user.employeeId,
+          lockVersion: { increment: 1 },
+          updatedAt: new Date(),
+        },
+        include: {
+          differentialDiagnoses: {
+            orderBy: { rank: 'asc' },
+          },
+        },
+      });
     });
 
     // Create audit log
@@ -293,7 +348,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Delete SOAP note
+    // Delete SOAP note (differentials will cascade delete)
     await db.soapNote.delete({
       where: { id },
     });
@@ -337,7 +392,7 @@ async function logPHIAccess(
   action: string,
   resource: string,
   resourceId: string | number,
-  details?: any
+  details?: unknown
 ): Promise<void> {
   try {
     await db.aIInteraction.create({

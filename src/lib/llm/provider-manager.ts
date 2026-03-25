@@ -1,5 +1,6 @@
 // LLM Provider Manager - Routes requests through configured providers (SSOT)
 import { db } from "@/lib/db";
+import { decryptApiKey, isEncrypted } from "@/lib/encryption";
 import ZAI from "z-ai-web-dev-sdk";
 
 // Provider configuration interface
@@ -23,6 +24,24 @@ export interface LLMProviderConfig {
   lastUsed?: Date | null;
 }
 
+// Decrypt API key helper
+function getDecryptedApiKey(encryptedKey: string | null): string | null {
+  if (!encryptedKey) return null;
+  
+  // Check if encrypted, if so decrypt
+  if (isEncrypted(encryptedKey)) {
+    try {
+      return decryptApiKey(encryptedKey);
+    } catch (error) {
+      console.error("[ProviderManager] Failed to decrypt API key:", error);
+      return null;
+    }
+  }
+  
+  // Legacy unencrypted key
+  return encryptedKey;
+}
+
 // Get all active LLM integrations
 export async function getActiveIntegrations(): Promise<LLMProviderConfig[]> {
   const integrations = await db.lLMIntegration.findMany({
@@ -37,7 +56,7 @@ export async function getActiveIntegrations(): Promise<LLMProviderConfig[]> {
     baseUrl: i.baseUrl,
     username: i.username,
     password: i.password,
-    apiKey: i.apiKey,
+    apiKey: getDecryptedApiKey(i.apiKey), // Decrypt for use
     model: i.model,
     isActive: i.isActive,
     isDefault: i.isDefault,
@@ -65,7 +84,7 @@ export async function getDefaultLLM(): Promise<LLMProviderConfig | null> {
       baseUrl: defaultIntegration.baseUrl,
       username: defaultIntegration.username,
       password: defaultIntegration.password,
-      apiKey: defaultIntegration.apiKey,
+      apiKey: getDecryptedApiKey(defaultIntegration.apiKey), // Decrypt for use
       model: defaultIntegration.model,
       isActive: defaultIntegration.isActive,
       isDefault: defaultIntegration.isDefault,
@@ -94,7 +113,7 @@ export async function getDefaultLLM(): Promise<LLMProviderConfig | null> {
     baseUrl: firstActive.baseUrl,
     username: firstActive.username,
     password: firstActive.password,
-    apiKey: firstActive.apiKey,
+    apiKey: getDecryptedApiKey(firstActive.apiKey), // Decrypt for use
     model: firstActive.model,
     isActive: firstActive.isActive,
     isDefault: firstActive.isDefault,
@@ -123,7 +142,7 @@ export async function getLLMById(id: string): Promise<LLMProviderConfig | null> 
     baseUrl: integration.baseUrl,
     username: integration.username,
     password: integration.password,
-    apiKey: integration.apiKey,
+    apiKey: getDecryptedApiKey(integration.apiKey), // Decrypt for use
     model: integration.model,
     isActive: integration.isActive,
     isDefault: integration.isDefault,

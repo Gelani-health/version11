@@ -57,11 +57,22 @@ REQUEST_TIMEOUT = 120.0
 # ===== Request/Response Models =====
 
 class DiagnosticRequest(BaseModel):
-    """Diagnostic request model."""
+    """
+    Diagnostic request model with comprehensive patient data.
+    
+    Renal Function Requirements:
+    - weight_kg: REQUIRED for accurate creatinine clearance calculation
+    - height_cm: Recommended for proper weight selection in obese patients
+    
+    CRITICAL: Without weight_kg, renal dosing adjustments cannot be calculated.
+    Without height_cm, obese patients may receive incorrect CrCl estimates.
+    """
     patient_symptoms: str = Field(..., min_length=10, max_length=5000)
     medical_history: Optional[str] = None
     age: Optional[int] = Field(None, ge=0, le=150)
     gender: Optional[str] = None
+    weight_kg: Optional[float] = Field(None, gt=0, le=500, description="Patient weight in kg (REQUIRED for renal dosing)")
+    height_cm: Optional[float] = Field(None, ge=50, le=250, description="Patient height in cm (recommended for obesity-adjusted CrCl)")
     current_medications: Optional[List[str]] = None
     allergies: Optional[List[str]] = None
     vital_signs: Optional[Dict[str, Any]] = None
@@ -335,21 +346,56 @@ Provide both the structured response AND the JSON for API parsing."""
         if request.allergies:
             safety_result["allergies"] = request.allergies
         
-        # 4. Check renal function for dosing
+        # 4. Check renal function for dosing using proper Cockcroft-Gault calculation
+        # Reference: Cockcroft DW, Gault MH. Nephron 1976;16:31-41
+        # CRITICAL: Proper weight selection is essential for accurate CrCl
         if request.lab_results and "creatinine" in request.lab_results:
-            # Calculate CrCl using Cockcroft-Gault formula
+            from app.calculators.renal_calculations import (
+                calculate_creatinine_clearance,
+                get_renal_dosing_category,
+            )
+            
             cr = request.lab_results["creatinine"]
             age = request.age or 50
-            if request.gender and request.gender.lower() == "female":
-                crcl = ((140 - age) * 60) / (72 * cr) * 0.85
-            else:
-                crcl = ((140 - age) * 70) / (72 * cr)
+            gender = request.gender or "male"
             
-            safety_result["crcl"] = crcl
-            if crcl < 60:
-                safety_result["warnings"].append(
-                    f"Renal impairment detected (CrCl: {crcl:.1f} mL/min). Dose adjustments may be required."
+            # Check if weight is provided - CRITICAL for accurate CrCl
+            if request.weight_kg:
+                # Use proper Cockcroft-Gault with weight selection algorithm
+                renal_result = calculate_creatinine_clearance(
+                    age_years=age,
+                    weight_kg=request.weight_kg,
+                    serum_creatinine=cr,
+                    gender=gender,
+                    height_cm=request.height_cm,
                 )
+                
+                safety_result["crcl"] = renal_result.creatinine_clearance
+                safety_result["renal_calculation_details"] = renal_result.to_dict()
+                
+                # Add any calculation warnings
+                if renal_result.warnings:
+                    safety_result["warnings"].extend(renal_result.warnings)
+                
+                # Get dosing category and considerations
+                severity, dosing_considerations = get_renal_dosing_category(
+                    renal_result.creatinine_clearance
+                )
+                safety_result["renal_impairment_severity"] = severity
+                safety_result["renal_dosing_considerations"] = dosing_considerations
+                
+            else:
+                # CRITICAL: Cannot calculate accurate CrCl without weight
+                # Using default assumption is dangerous for drug dosing
+                safety_result["warnings"].append(
+                    "⚠️ CRITICAL: Patient weight not provided. "
+                    "Accurate creatinine clearance cannot be calculated. "
+                    "Renal dosing adjustments for vancomycin, aminoglycosides, DOACs, "
+                    "and other renally-cleared drugs CANNOT be determined safely. "
+                    "Please provide weight_kg for accurate dosing recommendations."
+                )
+                safety_result["crcl"] = None
+                safety_result["renal_calculation_unavailable"] = True
         
         return safety_result
     

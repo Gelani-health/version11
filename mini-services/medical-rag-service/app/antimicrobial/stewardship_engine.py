@@ -770,7 +770,18 @@ class AntimicrobialStewardshipEngine:
         return False
     
     def _get_renal_dose(self, drug_name: str, crcl: float) -> Dict[str, str]:
-        """Get renal-adjusted dosing."""
+        """
+        Get renal-adjusted dosing based on creatinine clearance.
+        
+        Args:
+            drug_name: Name of the antimicrobial drug
+            crcl: Creatinine clearance in mL/min
+            
+        Returns:
+            Dictionary with dosing recommendations for the given CrCl
+            
+        Reference: IDSA Antimicrobial Stewardship Guidelines 2024
+        """
         drug_key = drug_name.upper().replace("-", "_").replace(" ", "_")
         
         if drug_key not in self.renal_dosing:
@@ -786,6 +797,146 @@ class AntimicrobialStewardshipEngine:
             return dosing.get("severe_15", dosing.get("moderate_30", {}))
         else:
             return dosing.get("dialysis", dosing.get("severe_15", {}))
+    
+    def calculate_renal_function(
+        self,
+        age: int,
+        weight_kg: float,
+        serum_creatinine: float,
+        gender: str,
+        height_cm: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Calculate creatinine clearance using proper Cockcroft-Gault equation.
+        
+        CRITICAL: This method uses the correct weight selection algorithm
+        for accurate CrCl estimation in all patient populations, including:
+        - Underweight patients
+        - Normal weight patients
+        - Overweight patients
+        - Obese patients (>130% IBW)
+        
+        Reference: Cockcroft DW, Gault MH. Nephron 1976;16:31-41
+        
+        Args:
+            age: Patient age in years
+            weight_kg: Actual body weight in kilograms (REQUIRED)
+            serum_creatinine: Serum creatinine in mg/dL
+            gender: 'male' or 'female'
+            height_cm: Height in centimeters (recommended for obesity assessment)
+            
+        Returns:
+            Dictionary containing:
+            - crcl_ml_min: Creatinine clearance in mL/min
+            - weight_used: Weight used in calculation
+            - weight_type: 'actual', 'ideal', or 'adjusted'
+            - warnings: Clinical warnings
+            - dosing_category: Renal impairment category
+            
+        Example:
+            >>> engine.calculate_renal_function(80, 45, 1.8, 'female', 155)
+            {'crcl_ml_min': 18.5, 'weight_used': 45.0, ...}
+        """
+        from app.calculators.renal_calculations import (
+            calculate_creatinine_clearance,
+            get_renal_dosing_category,
+        )
+        
+        result = calculate_creatinine_clearance(
+            age_years=age,
+            weight_kg=weight_kg,
+            serum_creatinine=serum_creatinine,
+            gender=gender,
+            height_cm=height_cm,
+        )
+        
+        severity, considerations = get_renal_dosing_category(result.creatinine_clearance)
+        
+        return {
+            "crcl_ml_min": result.creatinine_clearance,
+            "weight_used_kg": result.weight_used,
+            "weight_type": result.weight_type.value,
+            "ideal_body_weight_kg": result.ideal_body_weight,
+            "adjusted_body_weight_kg": result.adjusted_body_weight,
+            "is_obese": result.is_obese,
+            "obesity_ratio": result.obesity_ratio,
+            "warnings": result.warnings,
+            "calculation_notes": result.calculation_notes,
+            "dosing_category": severity,
+            "dosing_considerations": considerations,
+            "evidence_sources": result.evidence_sources,
+        }
+    
+    async def get_empiric_recommendation_with_renal_calc(
+        self,
+        infection_type: str,
+        patient_data: Dict[str, Any],
+        severity: Severity = Severity.MODERATE,
+        allergies: Optional[List[str]] = None,
+        current_medications: Optional[List[str]] = None,
+        pregnancy: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Get empiric antimicrobial recommendations with automatic CrCl calculation.
+        
+        This method calculates creatinine clearance from patient parameters
+        and applies appropriate renal dosing adjustments.
+        
+        Args:
+            infection_type: Key from EMPIRIC_THERAPY database
+            patient_data: Dictionary containing:
+                - age: Patient age in years (REQUIRED for CrCl)
+                - weight_kg: Actual body weight in kg (REQUIRED for CrCl)
+                - creatinine: Serum creatinine in mg/dL (REQUIRED for CrCl)
+                - gender: 'male' or 'female' (REQUIRED for CrCl)
+                - height_cm: Height in cm (recommended for obese patients)
+            severity: Infection severity
+            allergies: List of drug allergies
+            current_medications: Current medications for interaction check
+            pregnancy: Is patient pregnant
+            
+        Returns:
+            Dictionary with recommendations and renal function details
+        """
+        # Calculate CrCl if all required parameters are provided
+        crcl = None
+        renal_details = None
+        
+        required_for_crcl = ['age', 'weight_kg', 'creatinine', 'gender']
+        has_crcl_params = all(k in patient_data for k in required_for_crcl)
+        
+        if has_crcl_params:
+            renal_details = self.calculate_renal_function(
+                age=patient_data['age'],
+                weight_kg=patient_data['weight_kg'],
+                serum_creatinine=patient_data['creatinine'],
+                gender=patient_data['gender'],
+                height_cm=patient_data.get('height_cm'),
+            )
+            crcl = renal_details['crcl_ml_min']
+        
+        # Get standard recommendation
+        result = await self.get_empiric_recommendation(
+            infection_type=infection_type,
+            severity=severity,
+            allergies=allergies,
+            renal_function=crcl,
+            current_medications=current_medications,
+            pregnancy=pregnancy,
+        )
+        
+        # Add renal calculation details
+        if renal_details:
+            result["renal_function"] = renal_details
+        elif has_crcl_params is False and 'creatinine' in patient_data:
+            result["warnings"] = result.get("warnings", [])
+            result["warnings"].append(
+                "⚠️ Missing parameters for CrCl calculation. "
+                "Required: age, weight_kg, creatinine, gender. "
+                "Renal dosing adjustments may be inaccurate."
+            )
+        
+        return result
     
     def _check_pregnancy_safety(self, drug_name: str) -> Optional[str]:
         """Check pregnancy safety category."""

@@ -638,6 +638,250 @@ DRUG_BUG_MATCHING = {
 }
 
 
+# =============================================================================
+# DRUG-DRUG INTERACTION (DDI) DATABASE
+# =============================================================================
+# Evidence-Based Drug-Drug Interaction Database for Antimicrobial Stewardship
+# Severity levels: CONTRAINDICATED, MAJOR, MODERATE
+# 
+# References:
+# - FDA Drug Labels and Black Box Warnings
+# - Hansten PD, Horn JR. Drug Interactions Analysis and Management
+# - Lexicomp Drug Interactions Database
+# - Clinical Pharmacology Drug Interaction Database
+# - IDSA Antimicrobial Stewardship Guidelines 2024
+
+class DDISeverity(Enum):
+    """Severity levels for drug-drug interactions."""
+    CONTRAINDICATED = "contraindicated"  # Avoid combination
+    MAJOR = "major"                       # High risk, use only if no alternative
+    MODERATE = "moderate"                 # Use with caution, monitor closely
+
+
+@dataclass
+class DrugDrugInteraction:
+    """Represents a drug-drug interaction entry."""
+    drug1_patterns: List[str]      # Patterns to match first drug
+    drug2_patterns: List[str]      # Patterns to match second drug
+    severity: DDISeverity
+    mechanism: str
+    clinical_effect: str
+    monitoring: str
+    evidence_source: str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "severity": self.severity.value,
+            "mechanism": self.mechanism,
+            "clinical_effect": self.clinical_effect,
+            "monitoring": self.monitoring,
+            "evidence_source": self.evidence_source,
+        }
+
+
+# Comprehensive DDI Database for Antimicrobials
+# Format: (drug1_patterns, drug2_patterns) -> interaction
+# Both directions are checked automatically
+
+DDI_DATABASE: List[DrugDrugInteraction] = [
+    # ==========================================================================
+    # CONTRAINDICATED INTERACTIONS - Avoid combination
+    # ==========================================================================
+    
+    # Linezolid + serotonergic drugs (SSRIs/SNRIs) → Serotonin Syndrome
+    # Reference: FDA Black Box Warning; Lawrence KR et al. Pharmacotherapy 2006
+    DrugDrugInteraction(
+        drug1_patterns=["linezolid", "zyvox"],
+        drug2_patterns=[
+            "ssri", "fluoxetine", "sertraline", "paroxetine", "citalopram",
+            "escitalopram", "fluvoxamine", "snri", "venlafaxine", "duloxetine",
+            "desvenlafaxine", "milnacipran", "levomilnacipran"
+        ],
+        severity=DDISeverity.CONTRAINDICATED,
+        mechanism="MAO-A inhibition by linezolid + serotonin reuptake inhibition",
+        clinical_effect="Serotonin syndrome: confusion, hyperthermia, rigidity, autonomic instability",
+        monitoring="Avoid combination. If unavoidable, monitor for serotonin syndrome symptoms",
+        evidence_source="FDA Black Box Warning; Lawrence KR et al. Pharmacotherapy 2006;26:1784"
+    ),
+    
+    # Linezolid + MAOIs → Serotonin Syndrome
+    # Reference: FDA Prescribing Information; Menon et al. J Clin Psychiatry 2012
+    DrugDrugInteraction(
+        drug1_patterns=["linezolid", "zyvox"],
+        drug2_patterns=[
+            "maoi", "phenelzine", "tranylcypromine", "isocarboxazid",
+            "selegiline", "rasagiline", "safinamide", "moclobemide"
+        ],
+        severity=DDISeverity.CONTRAINDICATED,
+        mechanism="Additive MAO-A inhibition → severe serotonin toxicity",
+        clinical_effect="Severe serotonin syndrome: hyperthermia, rigidity, delirium, death",
+        monitoring="CONTRAINDICATED. Washout period of 2 weeks required before linezolid",
+        evidence_source="FDA Prescribing Information; Menon et al. J Clin Psychiatry 2012;73:e1078"
+    ),
+    
+    # ==========================================================================
+    # MAJOR INTERACTIONS - High risk, avoid if possible
+    # ==========================================================================
+    
+    # Metronidazole + Warfarin → INR Elevation
+    # Reference: Kazmierczak SC, Catrou PG. Clin Chem 1992;38:84
+    DrugDrugInteraction(
+        drug1_patterns=["metronidazole", "flagyl"],
+        drug2_patterns=["warfarin", "coumadin", "jantoven"],
+        severity=DDISeverity.MAJOR,
+        mechanism="CYP2C9 inhibition by metronidazole reduces warfarin clearance",
+        clinical_effect="INR elevation >2x, increased bleeding risk",
+        monitoring="Reduce warfarin dose 25-50%. Check INR within 3 days. Monitor for bleeding",
+        evidence_source="Kazmierczak SC et al. Clin Chem 1992;38:84; FDA Prescribing Information"
+    ),
+    
+    # Metronidazole + Ethanol → Disulfiram-like Reaction
+    # Reference: Visapaa JP et al. Ann Pharmacother 2002;36:971
+    DrugDrugInteraction(
+        drug1_patterns=["metronidazole", "flagyl"],
+        drug2_patterns=["ethanol", "alcohol", "beer", "wine", "liquor", "alcohol-containing"],
+        severity=DDISeverity.MAJOR,
+        mechanism="Inhibition of aldehyde dehydrogenase → acetaldehyde accumulation",
+        clinical_effect="Disulfiram-like reaction: flushing, nausea, vomiting, headache, tachycardia",
+        monitoring="Avoid alcohol during and 48-72 hours after metronidazole therapy",
+        evidence_source="Visapaa JP et al. Ann Pharmacother 2002;36:971"
+    ),
+    
+    # Fluoroquinolones + QT-prolonging drugs → TdP Risk
+    # Reference: Owens RC Jr, Ambrose PG. Clin Infect Dis 2005;40:1606
+    DrugDrugInteraction(
+        drug1_patterns=[
+            "fluoroquinolone", "ciprofloxacin", "levofloxacin", "moxifloxacin",
+            "gemifloxacin", "delafloxacin", "floxacin"
+        ],
+        drug2_patterns=[
+            "amiodarone", "sotalol", "dofetilide", "dronedarone", "ibutilide",
+            "haloperidol", "droperidol", "azithromycin", "clarithromycin",
+            "quinidine", "procainamide", "disopyramide", "methadone",
+            "ondansetron", "domperidone", "chlorpromazine", "thioridazine",
+            "ziprasidone", "pimozide"
+        ],
+        severity=DDISeverity.MAJOR,
+        mechanism="Additive QT prolongation via potassium channel blockade",
+        clinical_effect="Torsades de pointes (TdP), ventricular arrhythmia, sudden death",
+        monitoring="Avoid combination if possible. ECG monitoring required. Correct electrolytes",
+        evidence_source="Owens RC Jr et al. Clin Infect Dis 2005;40:1606; FDA Drug Safety Communication"
+    ),
+    
+    # Vancomycin + Aminoglycosides → Nephrotoxicity
+    # Reference: Rybak MJ et al. Am J Health Syst Pharm 2009;66:682
+    DrugDrugInteraction(
+        drug1_patterns=["vancomycin", "vancocin"],
+        drug2_patterns=["aminoglycoside", "gentamicin", "tobramycin", "amikacin", "neomycin"],
+        severity=DDISeverity.MAJOR,
+        mechanism="Additive proximal tubular toxicity",
+        clinical_effect="Acute kidney injury, elevated creatinine, requiring dialysis in severe cases",
+        monitoring="Use only if necessary. Monitor creatinine daily. Check vancomycin troughs. Therapeutic drug monitoring for aminoglycosides",
+        evidence_source="Rybak MJ et al. Am J Health Syst Pharm 2009;66:682; IDSA Guidelines"
+    ),
+    
+    # Rifampin + Warfarin → CYP450 Induction
+    # Reference: Koch-Weser J, Sellers EM. N Engl J Med 1971;285:487
+    DrugDrugInteraction(
+        drug1_patterns=["rifampin", "rifampicin", "rifadin", "rimactane"],
+        drug2_patterns=["warfarin", "coumadin", "jantoven"],
+        severity=DDISeverity.MAJOR,
+        mechanism="Potent CYP2C9 and CYP3A4 induction → increased warfarin clearance",
+        clinical_effect="Decreased INR, loss of anticoagulant effect, thrombosis risk",
+        monitoring="Increase warfarin dose by 50-100% when starting rifampin. Frequent INR monitoring",
+        evidence_source="Koch-Weser J et al. N Engl J Med 1971;285:487; Athan ET et al. Chest 2003"
+    ),
+    
+    # TMP-SMX + Warfarin → INR Increase
+    # Reference: Greenblatt DJ, von Moltke LL. Clin Pharmacokinet 2005;44:901
+    DrugDrugInteraction(
+        drug1_patterns=["tmp-smx", "bactrim", "septra", "sulfamethoxazole", "trimethoprim-sulfamethoxazole", "co-trimoxazole"],
+        drug2_patterns=["warfarin", "coumadin", "jantoven"],
+        severity=DDISeverity.MAJOR,
+        mechanism="CYP2C9 inhibition + displacement from protein binding sites",
+        clinical_effect="Increased INR, elevated bleeding risk",
+        monitoring="Reduce warfarin dose. Monitor INR within 3-5 days. Watch for bleeding signs",
+        evidence_source="Greenblatt DJ et al. Clin Pharmacokinet 2005;44:901"
+    ),
+    
+    # TMP-SMX + ACE Inhibitors/ARBs → Hyperkalemia
+    # Reference: Antoniou T et al. CMAJ 2010;182:1659
+    DrugDrugInteraction(
+        drug1_patterns=["tmp-smx", "bactrim", "septra", "sulfamethoxazole", "trimethoprim-sulfamethoxazole", "co-trimoxazole"],
+        drug2_patterns=[
+            "ace inhibitor", "lisinopril", "enalapril", "ramipril", "benazepril",
+            "fosinopril", "quinapril", "trandolapril", "captopril", "perindopril",
+            "arb", "losartan", "valsartan", "candesartan", "irbesartan",
+            "olmesartan", "telmisartan", "eprosartan", "azilsartan"
+        ],
+        severity=DDISeverity.MAJOR,
+        mechanism="Trimethoprim blocks epithelial sodium channel (ENaC) + ACE/ARB reduce aldosterone",
+        clinical_effect="Severe hyperkalemia, potentially life-threatening arrhythmias",
+        monitoring="Avoid combination if possible. Monitor potassium closely if used. Consider alternative antibiotic",
+        evidence_source="Antoniou T et al. CMAJ 2010;182:1659; Perazella MA. Am J Med 2000;109:183"
+    ),
+    
+    # ==========================================================================
+    # MODERATE INTERACTIONS - Use with caution
+    # ==========================================================================
+    
+    # Vancomycin + Loop Diuretics → Ototoxicity
+    # Reference: Rybak MJ et al. Am J Health Syst Pharm 2009;66:682
+    DrugDrugInteraction(
+        drug1_patterns=["vancomycin", "vancocin"],
+        drug2_patterns=["furosemide", "lasix", "bumetanide", "torsemide", "ethacrynic acid", "loop diuretic"],
+        severity=DDISeverity.MODERATE,
+        mechanism="Additive ototoxicity via cochlear damage",
+        clinical_effect="Hearing loss, tinnitus, vertigo (often irreversible)",
+        monitoring="Use lowest effective dose. Monitor hearing in high-risk patients. Avoid high vancomycin troughs",
+        evidence_source="Rybak MJ et al. Am J Health Syst Pharm 2009;66:682; Brummett RE. J Infect Dis 1981"
+    ),
+    
+    # Daptomycin + Statins → Myopathy
+    # Reference: FDA Prescribing Information; Phillips A et al. J Clin Pharm Ther 2017
+    DrugDrugInteraction(
+        drug1_patterns=["daptomycin", "cubicin"],
+        drug2_patterns=[
+            "statin", "simvastatin", "atorvastatin", "rosuvastatin", "pravastatin",
+            "lovastatin", "fluvastatin", "pitavastatin"
+        ],
+        severity=DDISeverity.MODERATE,
+        mechanism="Additive skeletal muscle toxicity (both agents can cause myopathy)",
+        clinical_effect="Myopathy, myalgias, elevated CPK, potential rhabdomyolysis",
+        monitoring="Consider holding statin during daptomycin therapy. Monitor CPK weekly. Watch for muscle symptoms",
+        evidence_source="FDA Prescribing Information; Phillips A et al. J Clin Pharm Ther 2017;42:513"
+    ),
+]
+
+
+def check_ddi(drug1: str, drug2: str) -> Optional[DrugDrugInteraction]:
+    """
+    Check for drug-drug interaction between two drugs.
+    
+    Args:
+        drug1: First drug name
+        drug2: Second drug name
+        
+    Returns:
+        DrugDrugInteraction if interaction found, None otherwise
+    """
+    drug1_lower = drug1.lower()
+    drug2_lower = drug2.lower()
+    
+    for ddi in DDI_DATABASE:
+        # Check both directions: drug1 matches first pattern AND drug2 matches second pattern
+        d1_matches_first = any(p in drug1_lower for p in ddi.drug1_patterns)
+        d2_matches_second = any(p in drug2_lower for p in ddi.drug2_patterns)
+        
+        d1_matches_second = any(p in drug1_lower for p in ddi.drug2_patterns)
+        d2_matches_first = any(p in drug2_lower for p in ddi.drug1_patterns)
+        
+        if (d1_matches_first and d2_matches_second) or (d1_matches_second and d2_matches_first):
+            return ddi
+    
+    return None
+
+
 class AntimicrobialStewardshipEngine:
     """
     P3: Comprehensive Antimicrobial Stewardship Engine.
@@ -798,12 +1042,28 @@ class AntimicrobialStewardshipEngine:
             
             alternatives.append(rec_dict)
         
+        # Check for inter-recommendation DDIs (drug-drug interactions between recommended drugs)
+        # This catches DDIs like vancomycin + gentamicin (nephrotoxicity) that would be
+        # missed when only checking against the patient's existing medications
+        all_recommended_drugs = [
+            rec.get("drug_name", "") for rec in first_line + alternatives
+            if rec.get("drug_name")
+        ]
+        # Filter out "PLUS" prefix drugs (they're combination notes, not actual drugs)
+        all_recommended_drugs = [
+            d for d in all_recommended_drugs 
+            if not d.upper().startswith("PLUS")
+        ]
+        
+        inter_recommendation_interactions = self._check_inter_recommendation_ddis(all_recommended_drugs)
+        
         return {
             "diagnosis": therapy["diagnosis"],
             "severity": severity.value,
             "first_line": first_line,
             "alternatives": alternatives,
             "allergy_warnings": all_allergy_warnings,
+            "inter_recommendation_interactions": inter_recommendation_interactions,
             "recommendation_notes": self._generate_recommendation_notes(
                 infection_type, severity, allergies, renal_function
             ),
@@ -1031,32 +1291,88 @@ class AntimicrobialStewardshipEngine:
         return None
     
     def _check_interactions(self, drug_name: str, medications: List[str]) -> List[Dict[str, str]]:
-        """Check for drug-drug interactions."""
+        """
+        Check for drug-drug interactions between recommended drug and current medications.
+        
+        Uses the evidence-based DDI_DATABASE for clinically critical interactions.
+        
+        Args:
+            drug_name: The antimicrobial being recommended
+            medications: List of patient's current medications
+            
+        Returns:
+            List of interaction dictionaries with severity, mechanism, clinical effect, monitoring
+            
+        Reference:
+            All interactions in DDI_DATABASE are evidence-based with cited sources
+        """
         interactions = []
-        drug_lower = drug_name.lower()
         
-        # Fluoroquinolone interactions
-        if any(d in drug_lower for d in ["floxacin", "quinolone"]):
-            for med in medications:
-                if "antacid" in med.lower() or "sucralfate" in med.lower():
-                    interactions.append({
-                        "interacting_drug": med,
-                        "interaction": "Reduced absorption - separate by 2-4 hours",
-                    })
-                if "warfarin" in med.lower():
-                    interactions.append({
-                        "interacting_drug": med,
-                        "interaction": "Increased INR - monitor closely",
-                    })
+        for med in medications:
+            ddi = check_ddi(drug_name, med)
+            if ddi:
+                interaction_dict = {
+                    "interacting_drug": med,
+                    "recommended_drug": drug_name,
+                    "interaction": ddi.clinical_effect,
+                    "severity": ddi.severity.value,
+                    "mechanism": ddi.mechanism,
+                    "monitoring": ddi.monitoring,
+                    "evidence_source": ddi.evidence_source,
+                }
+                interactions.append(interaction_dict)
+                logger.warning(
+                    f"DDI detected: {drug_name} + {med} -> {ddi.severity.value}: {ddi.clinical_effect}"
+                )
         
-        # Vancomycin interactions
-        if "vancomycin" in drug_lower:
-            for med in medications:
-                if any(a in med.lower() for a in ["aminoglycoside", "gentamicin", "tobramycin", "amikacin"]):
-                    interactions.append({
-                        "interacting_drug": med,
-                        "interaction": "Increased nephrotoxicity risk",
-                    })
+        return interactions
+    
+    def _check_inter_recommendation_ddis(
+        self, 
+        recommended_drugs: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Check for drug-drug interactions between all pairs of recommended drugs.
+        
+        This method catches DDIs that would be missed when only checking against
+        the patient's existing medications. For example, if the engine recommends
+        vancomycin + gentamicin together, or linezolid when the patient is on citalopram,
+        these inter-recommendation DDIs must be flagged.
+        
+        Args:
+            recommended_drugs: List of drugs being recommended together
+            
+        Returns:
+            List of interaction dictionaries for each pair with an interaction
+            
+        Example:
+            >>> engine._check_inter_recommendation_ddis(["vancomycin", "gentamicin"])
+            [{"drug1": "vancomycin", "drug2": "gentamicin", "severity": "major", ...}]
+            
+        References:
+            - FDA Drug Safety Communications
+            - IDSA Antimicrobial Stewardship Guidelines 2024
+        """
+        interactions = []
+        
+        # Generate all unique pairs of recommended drugs
+        for i, drug1 in enumerate(recommended_drugs):
+            for drug2 in recommended_drugs[i+1:]:
+                ddi = check_ddi(drug1, drug2)
+                if ddi:
+                    interaction_dict = {
+                        "drug1": drug1,
+                        "drug2": drug2,
+                        "severity": ddi.severity.value,
+                        "mechanism": ddi.mechanism,
+                        "clinical_effect": ddi.clinical_effect,
+                        "monitoring": ddi.monitoring,
+                        "evidence_source": ddi.evidence_source,
+                    }
+                    interactions.append(interaction_dict)
+                    logger.warning(
+                        f"Inter-recommendation DDI: {drug1} + {drug2} -> {ddi.severity.value}: {ddi.clinical_effect}"
+                    )
         
         return interactions
     

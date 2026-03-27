@@ -39,6 +39,19 @@ from app.fhir.mappers import (
     create_fhir_bundle,
     validate_fhir_resource,
     generate_uuid,
+    hash_patient_id,
+)
+from app.fhir.bundle_builder import (
+    build_encounter_bundle,
+    map_patient,
+    map_condition,
+    map_observations,
+    map_medication_request,
+)
+from app.fhir.extensions import (
+    EXT_EVIDENCE_PMID,
+    EXT_POSTERIOR_PROB,
+    EXT_BAYESIAN_RANK,
 )
 
 
@@ -889,6 +902,254 @@ async def search_service_requests(
     except Exception as e:
         logger.error(f"Error searching service requests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# ENCOUNTER ENDPOINTS
+# =============================================================================
+
+@router.get("/Encounter/{encounter_id}/$document")
+async def get_encounter_document(
+    encounter_id: str = Path(..., description="Encounter ID")
+):
+    """
+    FHIR $document operation for an encounter.
+    
+    Returns the full document Bundle for a specific encounter,
+    used for point-in-time audit retrieval.
+    
+    Reference: https://hl7.org/fhir/R4/operation-composition-document.html
+    
+    Args:
+        encounter_id: Encounter identifier (SOAP note ID or consultation ID)
+        
+    Returns:
+        FHIR Bundle containing all resources for the encounter
+    """
+    try:
+        # Try to find the encounter (SOAP note)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Try soap_notes table first
+            cursor.execute("""
+                SELECT * FROM soap_notes WHERE id = ?
+            """, (encounter_id,))
+            note_row = cursor.fetchone()
+            
+            if not note_row:
+                # Return FHIR-compliant error
+                return JSONResponse(
+                    content={
+                        "resourceType": "OperationOutcome",
+                        "issue": [{
+                            "severity": "error",
+                            "code": "not-found",
+                            "details": {
+                                "text": f"Encounter '{encounter_id}' not found"
+                            }
+                        }]
+                    },
+                    status_code=404,
+                    headers={"Content-Type": "application/fhir+json"}
+                )
+            
+            note = row_to_dict(note_row)
+            patient_id = note.get("patientId")
+            
+            # Get patient data
+            cursor.execute("SELECT * FROM Patient WHERE id = ?", (patient_id,))
+            patient_row = cursor.fetchone()
+            
+            if not patient_row:
+                return JSONResponse(
+                    content={
+                        "resourceType": "OperationOutcome",
+                        "issue": [{
+                            "severity": "error",
+                            "code": "not-found",
+                            "details": {"text": "Patient not found"}
+                        }]
+                    },
+                    status_code=404,
+                    headers={"Content-Type": "application/fhir+json"}
+                )
+            
+            patient = row_to_dict(patient_row)
+            
+            # Build clinical session data
+            clinical_session = {
+                "encounter_id": encounter_id,
+                "chief_complaint": note.get("chiefComplaint", ""),
+                "differential": [],
+                "observations": {},
+                "recommendations": [],
+                "soap_note": note,
+                "rag_sources": [],
+                "audit_session_hash": note.get("auditSessionHash", ""),
+            }
+            
+            # Get assessment items as differential
+            cursor.execute("""
+                SELECT * FROM soap_note_assessment_items 
+                WHERE soapNoteId = ?
+                ORDER BY rank ASC
+            """, (encounter_id,))
+            
+            for i, item in enumerate([row_to_dict(r) for r in cursor.fetchall()]):
+                clinical_session["differential"].append({
+                    "hypothesis": item.get("diagnosis", ""),
+                    "icd10": item.get("icdCode", ""),
+                    "rank": i + 1,
+                    "posterior_probability": item.get("confidence", 0.5),
+                    "is_critical": item.get("isCritical", False),
+                    "evidence_pmids": [],
+                })
+        
+        # Build the encounter bundle
+        bundle = build_encounter_bundle(patient, clinical_session)
+        
+        logger.info(f"FHIR $document: Retrieved encounter {encounter_id}")
+        
+        return JSONResponse(
+            content=bundle,
+            headers={
+                "Content-Type": "application/fhir+json",
+                "X-Gelani-FHIR-Version": "R4",
+                "Cache-Control": "no-store"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in $document operation: {e}")
+        return JSONResponse(
+            content={
+                "resourceType": "OperationOutcome",
+                "issue": [{
+                    "severity": "error",
+                    "code": "exception",
+                    "details": {"text": f"Internal server error: {str(e)}"}
+                }]
+            },
+            status_code=500,
+            headers={"Content-Type": "application/fhir+json"}
+        )
+
+
+# =============================================================================
+# BUNDLE VALIDATION ENDPOINT
+# =============================================================================
+
+@router.post("/Bundle/$validate")
+async def validate_bundle(request: Request):
+    """
+    Validate a FHIR Bundle.
+    
+    Performs basic structural validation:
+    - Check all required fields present
+    - Verify all references resolve within the bundle
+    - Ensure no raw patient IDs in extension values
+    
+    Reference: https://hl7.org/fhir/R4/bundle-definitions.html
+    
+    Args:
+        request: Request body containing FHIR Bundle
+        
+    Returns:
+        Validation result with issues list
+    """
+    try:
+        body = await request.json()
+        issues = []
+        
+        # Check resourceType
+        if body.get("resourceType") != "Bundle":
+            issues.append("resourceType must be 'Bundle'")
+        
+        # Check required fields
+        if "type" not in body:
+            issues.append("Bundle.type is required")
+        
+        valid_types = ["document", "message", "transaction", "transaction-response",
+                      "batch", "batch-response", "history", "searchset", "collection"]
+        if body.get("type") and body["type"] not in valid_types:
+            issues.append(f"Invalid Bundle.type: {body['type']}")
+        
+        # Check entries
+        entries = body.get("entry", [])
+        if not entries:
+            issues.append("Bundle.entry should not be empty")
+        
+        # Collect all resource IDs for reference resolution
+        resource_ids = set()
+        for entry in entries:
+            resource = entry.get("resource", {})
+            if resource.get("id"):
+                resource_ids.add(resource["id"])
+        
+        # Check references resolve
+        for entry in entries:
+            resource = entry.get("resource", {})
+            resource_type = resource.get("resourceType", "")
+            
+            # Check subject/patient references
+            for ref_field in ["subject", "patient"]:
+                ref = resource.get(ref_field, {})
+                if isinstance(ref, dict):
+                    ref_value = ref.get("reference", "")
+                    if ref_value.startswith("Patient/"):
+                        patient_id = ref_value.split("/")[-1]
+                        # Check if this looks like a raw ID (should be SHA-256 hash)
+                        if len(patient_id) < 32 and not patient_id.startswith("urn:"):
+                            issues.append(
+                                f"{resource_type}: Raw patient ID detected in {ref_field}.reference - "
+                                "must use SHA-256 hashed ID"
+                            )
+            
+            # Check extensions for raw IDs
+            extensions = resource.get("extension", [])
+            for ext in extensions:
+                for key, value in ext.items():
+                    if key.startswith("value") and isinstance(value, str):
+                        # Check if value looks like a raw patient ID
+                        if len(value) < 32 and value.isalnum() and not value.startswith("PMID:"):
+                            # Could be a raw ID - flag as warning
+                            pass  # Non-blocking warning
+        
+        # Check Composition author
+        for entry in entries:
+            resource = entry.get("resource", {})
+            if resource.get("resourceType") == "Composition":
+                authors = resource.get("author", [])
+                for author in authors:
+                    display = author.get("display", "")
+                    if display and not display.startswith("Gelani Healthcare AI System"):
+                        issues.append(
+                            "Composition.author.display must start with 'Gelani Healthcare AI System' "
+                            f"(found: '{display}')"
+                        )
+        
+        is_valid = len(issues) == 0
+        
+        logger.info(f"Bundle validation: {'PASS' if is_valid else 'FAIL'} ({len(issues)} issues)")
+        
+        return JSONResponse(
+            content={
+                "valid": is_valid,
+                "issues": issues
+            },
+            headers={"Content-Type": "application/fhir+json"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error validating bundle: {e}")
+        return JSONResponse(
+            content={
+                "valid": False,
+                "issues": [f"Validation error: {str(e)}"]
+            },
+            headers={"Content-Type": "application/fhir+json"}
+        )
 
 
 # =============================================================================

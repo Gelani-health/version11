@@ -173,6 +173,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(data, {
       headers: {
         "Content-Type": "application/fhir+json",
+        "X-Gelani-FHIR-Version": "R4",
+        "Cache-Control": "no-store",  // PHI must never be cached in edge or CDN layers
       },
     });
   } catch (error) {

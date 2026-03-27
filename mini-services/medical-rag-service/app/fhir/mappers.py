@@ -19,9 +19,17 @@ Evidence Sources:
 - SNOMED CT: https://www.snomed.org/
 - ICD-10: https://www.who.int/standards/classifications
 
+PROMPT 12: FHIR R4 Export Implementation
+- SHA-256 hashing for patient IDs (never expose raw DB IDs)
+- Bayesian posterior probability extensions
+- Evidence PMID extensions
+- Comprehensive bundle building
+
 Author: Gelani Healthcare Assistant
 """
 
+import os
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
@@ -61,6 +69,9 @@ LOINC_PLAN_DISPLAY = "Plan of care"
 # Default FHIR namespaces
 FHIR_DEFAULT_NAMESPACE = "urn:uuid:"
 
+# Version info for Composition author
+GELANI_VERSION = os.environ.get("GELANI_VERSION", "1.0.0")
+
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -69,6 +80,44 @@ FHIR_DEFAULT_NAMESPACE = "urn:uuid:"
 def generate_uuid() -> str:
     """Generate a UUID for FHIR resource IDs."""
     return str(uuid4())
+
+
+def hash_patient_id(patient_id: str) -> str:
+    """
+    Generate a SHA-256 hash of the patient ID for FHIR export.
+    
+    This ensures raw database IDs are never exposed in FHIR exports,
+    maintaining patient privacy while allowing deterministic reference
+    resolution within the bundle.
+    
+    Evidence Source: HIPAA Safe Harbor provision (45 CFR 164.514)
+    
+    Args:
+        patient_id: Raw patient identifier from database
+        
+    Returns:
+        SHA-256 hash (first 32 characters) for use as FHIR resource ID
+    """
+    hash_obj = hashlib.sha256(str(patient_id).encode("utf-8"))
+    return hash_obj.hexdigest()[:32]
+
+
+def generate_resource_id(*components: str) -> str:
+    """
+    Generate a deterministic resource ID from components.
+    
+    Uses SHA-256 hash to ensure consistent IDs for the same inputs,
+    enabling proper reference resolution within bundles.
+    
+    Args:
+        *components: String components to hash together
+        
+    Returns:
+        16-character hex string for use as FHIR resource ID
+    """
+    combined = "|".join(str(c) for c in components)
+    hash_obj = hashlib.sha256(combined.encode("utf-8"))
+    return hash_obj.hexdigest()[:16]
 
 
 def format_fhir_date(date_value: Any) -> str:

@@ -231,6 +231,10 @@ app.add_middleware(
 from app.api.calculators import router as calculators_router
 app.include_router(calculators_router)
 
+# PROMPT 12: FHIR R4 Export Router
+from app.api.fhir import router as fhir_router
+app.include_router(fhir_router)
+
 
 # ===== Audit Logging Middleware =====
 

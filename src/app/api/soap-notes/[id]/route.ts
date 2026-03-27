@@ -10,6 +10,12 @@
  * Schema Improvements (Phase 4):
  * - Differential diagnoses are now stored in a separate table
  * - Proper relations with database constraints
+ * 
+ * PROMPT 10 Enhancements:
+ * - Version history with SoapNoteVersion for amendment trail
+ * - Structured SoapNoteAssessmentItem with ICD coding
+ * - Structured SoapNotePlanItem for care coordination
+ * - Automatic version snapshot creation on updates
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -31,6 +37,36 @@ interface DifferentialDiagnosisInput {
   reasoning?: string;
   status?: string;
   icdVersion?: string;
+}
+
+// PROMPT 10: Assessment item interface
+interface AssessmentItemInput {
+  id?: string;
+  diagnosis: string;
+  icdCode?: string;
+  icdVersion?: string;
+  snomedCode?: string;
+  rank?: number;
+  confidence?: number;
+  status?: string;
+  isPrimary?: boolean;
+  notes?: string;
+}
+
+// PROMPT 10: Plan item interface
+interface PlanItemInput {
+  id?: string;
+  category: 'medication' | 'lab' | 'imaging' | 'referral' | 'followup' | 'procedure' | 'education';
+  description: string;
+  status?: string;
+  priority?: string;
+  orderedBy?: string;
+  orderedAt?: string;
+  scheduledDate?: string;
+  completedAt?: string;
+  completedBy?: string;
+  outcome?: string;
+  notes?: string;
 }
 
 /**
@@ -140,6 +176,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
           },
         },
+        // PROMPT 10: Include new relations
+        assessmentItems: {
+          orderBy: { rank: 'asc' },
+        },
+        planItems: {
+          orderBy: { createdAt: 'asc' },
+        },
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 5, // Last 5 versions
+        },
       },
     });
 
@@ -223,10 +270,38 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Extract differential diagnoses from body
-    const { differentialDiagnoses, ...updateData } = body;
+    const { differentialDiagnoses, assessmentItems, planItems, ...updateData } = body;
 
-    // Use transaction to update SOAP note and differentials atomically
+    // PROMPT 10: Create version snapshot before update
+    // Get the current maximum version number
+    const maxVersion = await db.soapNoteVersion.aggregate({
+      where: { soapNoteId: id },
+      _max: { versionNumber: true },
+    });
+    const nextVersionNumber = (maxVersion._max.versionNumber || 0) + 1;
+
+    // Use transaction to update SOAP note, create version, and update related items atomically
     const updatedNote = await db.$transaction(async (tx) => {
+      // PROMPT 10: Create version snapshot before update
+      // Only create version if note is already signed (drafts don't need version history)
+      if (existingNote.status === 'signed' || existingNote.status === 'amended') {
+        // Serialize current note state for snapshot
+        const snapshotData = {
+          ...existingNote,
+          differentialDiagnoses: existingNote.differentialDiagnoses,
+        };
+        
+        await tx.soapNoteVersion.create({
+          data: {
+            soapNoteId: id,
+            versionNumber: nextVersionNumber,
+            snapshotJson: JSON.stringify(snapshotData),
+            amendedBy: user.employeeId,
+            amendmentReason: 'Clinical update',
+            changeSummary: 'Note updated via API',
+          },
+        });
+      }
       // Update differential diagnoses if provided
       if (differentialDiagnoses && Array.isArray(differentialDiagnoses)) {
         // Delete existing differentials
@@ -251,6 +326,60 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
       }
 
+      // PROMPT 10: Update assessment items if provided
+      if (assessmentItems && Array.isArray(assessmentItems)) {
+        // Delete existing assessment items
+        await db.soapNoteAssessmentItem.deleteMany({
+          where: { soapNoteId: id },
+        });
+
+        // Create new assessment items
+        if (assessmentItems.length > 0) {
+          await db.soapNoteAssessmentItem.createMany({
+            data: assessmentItems.map((a: AssessmentItemInput, index: number) => ({
+              soapNoteId: id,
+              diagnosis: a.diagnosis,
+              icdCode: a.icdCode || null,
+              icdVersion: a.icdVersion || 'ICD-10',
+              snomedCode: a.snomedCode || null,
+              rank: a.rank || index + 1,
+              confidence: a.confidence || null,
+              status: a.status || 'active',
+              isPrimary: a.isPrimary || false,
+              notes: a.notes || null,
+            })),
+          });
+        }
+      }
+
+      // PROMPT 10: Update plan items if provided
+      if (planItems && Array.isArray(planItems)) {
+        // Delete existing plan items
+        await db.soapNotePlanItem.deleteMany({
+          where: { soapNoteId: id },
+        });
+
+        // Create new plan items
+        if (planItems.length > 0) {
+          await db.soapNotePlanItem.createMany({
+            data: planItems.map((p: PlanItemInput) => ({
+              soapNoteId: id,
+              category: p.category,
+              description: p.description,
+              status: p.status || 'pending',
+              priority: p.priority || 'routine',
+              orderedBy: p.orderedBy || null,
+              orderedAt: p.orderedAt ? new Date(p.orderedAt) : null,
+              scheduledDate: p.scheduledDate ? new Date(p.scheduledDate) : null,
+              completedAt: p.completedAt ? new Date(p.completedAt) : null,
+              completedBy: p.completedBy || null,
+              outcome: p.outcome || null,
+              notes: p.notes || null,
+            })),
+          });
+        }
+      }
+
       // Update SOAP note with authenticated user as editor
       return tx.soapNote.update({
         where: { id },
@@ -263,6 +392,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         include: {
           differentialDiagnoses: {
             orderBy: { rank: 'asc' },
+          },
+          // PROMPT 10: Include new relations
+          assessmentItems: {
+            orderBy: { rank: 'asc' },
+          },
+          planItems: {
+            orderBy: { createdAt: 'asc' },
           },
         },
       });

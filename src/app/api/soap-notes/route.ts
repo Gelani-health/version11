@@ -10,6 +10,12 @@
  * Schema Improvements (Phase 4):
  * - Differential diagnoses are now stored in a separate table
  * - Proper relations with database constraints
+ * 
+ * PROMPT 10 Enhancements:
+ * - Version history with SoapNoteVersion for amendment trail
+ * - Structured SoapNoteAssessmentItem with ICD coding
+ * - Structured SoapNotePlanItem for care coordination
+ * - FHIR Composition export support via JSON snapshots
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -26,6 +32,41 @@ interface DifferentialDiagnosisInput {
   reasoning?: string;
   status?: string;
   icdVersion?: string;
+}
+
+// PROMPT 10: Assessment item interface
+interface AssessmentItemInput {
+  diagnosis: string;
+  icdCode?: string;
+  icdVersion?: string;
+  snomedCode?: string;
+  rank?: number;
+  confidence?: number;
+  status?: string;
+  isPrimary?: boolean;
+  notes?: string;
+}
+
+// PROMPT 10: Plan item interface
+interface PlanItemInput {
+  category: 'medication' | 'lab' | 'imaging' | 'referral' | 'followup' | 'procedure' | 'education';
+  description: string;
+  status?: string;
+  priority?: string;
+  orderedBy?: string;
+  orderedAt?: string;
+  scheduledDate?: string;
+  notes?: string;
+}
+
+// PROMPT 10: Version snapshot interface
+interface VersionSnapshot {
+  soapNoteId: string;
+  versionNumber: number;
+  snapshotJson: string;
+  amendedBy: string;
+  amendmentReason?: string;
+  changeSummary?: string;
 }
 
 /**
@@ -61,6 +102,10 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const limit = parseInt(searchParams.get('limit') || '50');
     const includeDifferentials = searchParams.get('includeDifferentials') !== 'false';
+    // PROMPT 10: Option to include new relations
+    const includeAssessmentItems = searchParams.get('includeAssessmentItems') !== 'false';
+    const includePlanItems = searchParams.get('includePlanItems') !== 'false';
+    const includeVersions = searchParams.get('includeVersions') === 'true';
 
     const where: Record<string, unknown> = {};
 
@@ -102,6 +147,23 @@ export async function GET(request: NextRequest) {
         ...(includeDifferentials ? {
           differentialDiagnoses: {
             orderBy: { rank: 'asc' },
+          },
+        } : {}),
+        // PROMPT 10: Include new relations
+        ...(includeAssessmentItems ? {
+          assessmentItems: {
+            orderBy: { rank: 'asc' },
+          },
+        } : {}),
+        ...(includePlanItems ? {
+          planItems: {
+            orderBy: { createdAt: 'asc' },
+          },
+        } : {}),
+        ...(includeVersions ? {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 10, // Limit to last 10 versions
           },
         } : {}),
       },
@@ -156,6 +218,9 @@ export async function POST(request: NextRequest) {
     const {
       patientId,
       encounterId,
+      // PROMPT 10: New structured items
+      assessmentItems,
+      planItems,
       // Subjective
       chiefComplaint,
       hpiOnset,
@@ -385,10 +450,44 @@ export async function POST(request: NextRequest) {
             icdVersion: d.icdVersion,
           })),
         } : undefined,
+        // PROMPT 10: Create assessment items
+        assessmentItems: assessmentItems && Array.isArray(assessmentItems) && assessmentItems.length > 0 ? {
+          create: assessmentItems.map((a: AssessmentItemInput, index: number) => ({
+            diagnosis: a.diagnosis,
+            icdCode: a.icdCode || null,
+            icdVersion: a.icdVersion || 'ICD-10',
+            snomedCode: a.snomedCode || null,
+            rank: a.rank || index + 1,
+            confidence: a.confidence || null,
+            status: a.status || 'active',
+            isPrimary: a.isPrimary || false,
+            notes: a.notes || null,
+          })),
+        } : undefined,
+        // PROMPT 10: Create plan items
+        planItems: planItems && Array.isArray(planItems) && planItems.length > 0 ? {
+          create: planItems.map((p: PlanItemInput) => ({
+            category: p.category,
+            description: p.description,
+            status: p.status || 'pending',
+            priority: p.priority || 'routine',
+            orderedBy: p.orderedBy || null,
+            orderedAt: p.orderedAt ? new Date(p.orderedAt) : null,
+            scheduledDate: p.scheduledDate ? new Date(p.scheduledDate) : null,
+            notes: p.notes || null,
+          })),
+        } : undefined,
       },
       include: {
         differentialDiagnoses: {
           orderBy: { rank: 'asc' },
+        },
+        // PROMPT 10: Include new relations
+        assessmentItems: {
+          orderBy: { rank: 'asc' },
+        },
+        planItems: {
+          orderBy: { createdAt: 'asc' },
         },
       },
     });

@@ -923,6 +923,7 @@ model Employee {
 }
 
 /// Enhanced SOAP Note Model
+/// PROMPT 10: Added version history, structured assessment items, and plan items
 model SoapNote {
   id                      String                @id @default(uuid())
   encounterId             String                @unique
@@ -1001,6 +1002,10 @@ model SoapNote {
   prescriptions           Prescription[]
   addenda                 SoapAddendum[]
   differentialDiagnoses   DifferentialDiagnosis[]
+  // PROMPT 10: New relations for version history, assessment items, and plan items
+  versions                SoapNoteVersion[]
+  assessmentItems         SoapNoteAssessmentItem[]
+  planItems               SoapNotePlanItem[]
   signer                  Employee?             @relation("SoapNotesBySigner", fields: [signedBy], references: [employeeId])
   editor                  Employee?             @relation("SoapNotesByEditor", fields: [lastEditedBy], references: [employeeId])
   author                  Employee              @relation("SoapNotesByAuthor", fields: [createdBy], references: [employeeId])
@@ -1011,6 +1016,81 @@ model SoapNote {
   @@index([status])
   @@index([encounterId])
   @@map("soap_notes")
+}
+
+/// PROMPT 10: SOAP Note Version History
+/// Enables tracking of all changes with full snapshot for audit trail and FHIR export
+/// Reference: HIPAA requires maintaining audit trail of all modifications to medical records
+model SoapNoteVersion {
+  id              String   @id @default(cuid())
+  soapNoteId      String
+  soapNote        SoapNote @relation(fields: [soapNoteId], references: [id], onDelete: Cascade)
+  versionNumber   Int      // Sequential version number (1, 2, 3, ...)
+  snapshotJson    String   // Full JSON snapshot of the note at this version for FHIR Composition export
+  amendedBy       String   // User ID who made the change
+  amendmentReason String?  // Reason for the amendment (required for HIPAA compliance)
+  changeSummary   String?  // Brief description of what changed
+  createdAt       DateTime @default(now())
+
+  @@unique([soapNoteId, versionNumber]) // One version per note per number
+  @@index([soapNoteId])
+  @@index([amendedBy])
+  @@index([createdAt])
+  @@map("soap_note_versions")
+}
+
+/// PROMPT 10: SOAP Note Assessment Item
+/// Structured assessment entries with ICD coding for proper clinical documentation
+/// Reference: ICD-10 coding required for billing and quality reporting
+model SoapNoteAssessmentItem {
+  id          String   @id @default(cuid())
+  soapNoteId  String
+  soapNote    SoapNote @relation(fields: [soapNoteId], references: [id], onDelete: Cascade)
+  diagnosis   String   // Diagnosis description
+  icdCode     String?  // ICD-10 code (e.g., J18.9 for Pneumonia)
+  icdVersion  String?  @default("ICD-10") // ICD version (ICD-10, ICD-11)
+  snomedCode  String?  // SNOMED CT code for clinical terminology
+  rank        Int      @default(1) // 1=primary, 2=secondary, etc.
+  confidence  Float?   // AI confidence score (0-1) if AI-suggested
+  status      String   @default("active") // active, ruled-out, resolved
+  isPrimary   Boolean  @default(false) // Is this the primary diagnosis?
+  notes       String?  // Additional clinical notes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([soapNoteId, rank]) // One item per rank per note
+  @@index([soapNoteId])
+  @@index([icdCode])
+  @@index([status])
+  @@map("soap_note_assessment_items")
+}
+
+/// PROMPT 10: SOAP Note Plan Item
+/// Structured plan entries for medications, labs, imaging, referrals, and follow-ups
+/// Reference: Clinical decision support requires structured plan items for care coordination
+model SoapNotePlanItem {
+  id              String   @id @default(cuid())
+  soapNoteId      String
+  soapNote        SoapNote @relation(fields: [soapNoteId], references: [id], onDelete: Cascade)
+  category        String   // "medication" | "lab" | "imaging" | "referral" | "followup" | "procedure" | "education"
+  description     String   // Detailed description of the plan item
+  status          String   @default("pending") // pending, ordered, scheduled, in-progress, completed, cancelled
+  priority        String   @default("routine") // routine, urgent, stat
+  orderedBy       String?  // User ID who ordered
+  orderedAt       DateTime? // When the order was placed
+  scheduledDate   DateTime? // For follow-ups and scheduled procedures
+  completedAt     DateTime? // When the item was completed
+  completedBy     String?  // User ID who completed
+  outcome         String?  // Result/outcome of the plan item
+  notes           String?  // Additional notes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([soapNoteId])
+  @@index([category])
+  @@index([status])
+  @@index([priority])
+  @@map("soap_note_plan_items")
 }
 
 /// Differential Diagnosis - Normalized from SoapNote differentials

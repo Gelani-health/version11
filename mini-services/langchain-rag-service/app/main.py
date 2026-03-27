@@ -1,34 +1,55 @@
 """
-LangChain RAG Service - FastAPI Application
+P9: LangChain RAG Service - Thin HTTP Proxy
 ============================================
 
-READ/WRITE enabled service with Smart Sync.
-Shares Pinecone namespace with Custom RAG.
+This service has been demoted to a pure HTTP proxy that forwards all requests
+to the authoritative Medical RAG Service on port 3031.
 
-Key Features:
-- Vector ID prefixing (lc_) for uniqueness
-- source_pipeline metadata tagging
-- Smart Sync API endpoints
-- Full READ/WRITE capabilities
+Architecture Decision:
+- Medical RAG (Port 3031): PRIMARY diagnostic engine with full P1-P9 features
+- LangChain RAG (Port 3032): Thin proxy for backward compatibility
+
+Why this change:
+- Previously duplicated retrieval logic between services
+- Medical RAG now has authoritative RAG pipeline with:
+  - PubMed/Pinecone ingestion with 7 clinical namespaces
+  - Hybrid BM25 + semantic search with RRF
+  - MeSH synonym expansion
+  - Citation validation
+
+This file keeps the service alive for backward compatibility with any external
+callers expecting the port 3032 interface.
 """
 
 import asyncio
 import time
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-import uvicorn
+import httpx
 from loguru import logger
 
-from app.core.config import get_settings, MESH_SPECIALTIES
+from app.core.config import get_settings
 
 
-# ===== Request/Response Models =====
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+MEDICAL_RAG_URL = os.environ.get("MEDICAL_RAG_URL", "http://localhost:3031")
+PROXY_TIMEOUT = 30.0  # 30 seconds timeout
+
+import os
+
+
+# =============================================================================
+# REQUEST/RESPONSE MODELS (Kept for backward compatibility)
+# =============================================================================
 
 class QueryRequest(BaseModel):
     """Medical diagnostic query request."""
@@ -37,973 +58,421 @@ class QueryRequest(BaseModel):
     specialty: Optional[str] = Field(None, description="Medical specialty filter")
     top_k: int = Field(50, ge=1, le=100, description="Number of results to retrieve")
     min_score: float = Field(0.5, ge=0.0, le=1.0, description="Minimum relevance score")
-    source_filter: Optional[str] = Field(None, description="Filter by source: 'langchain', 'custom_rag', or None")
-
-
-class IngestRequest(BaseModel):
-    """Request to ingest an article."""
-    pmid: str = Field(..., description="PubMed ID")
-    title: str = Field(..., description="Article title")
-    abstract: str = Field(..., description="Article abstract")
-    journal: Optional[str] = None
-    publication_date: Optional[str] = None
-    authors: Optional[List[str]] = None
-    mesh_terms: Optional[List[str]] = None
-    doi: Optional[str] = None
-    pmc_id: Optional[str] = None
-
-
-class BatchIngestRequest(BaseModel):
-    """Request to batch ingest articles."""
-    articles: List[IngestRequest] = Field(..., description="Articles to ingest")
-
-
-class SearchResult(BaseModel):
-    """Individual search result."""
-    id: str
-    score: float
-    pmid: str
-    title: str
-    abstract: str
-    journal: Optional[str] = None
-    publication_date: Optional[str] = None
-    source_pipeline: str = "langchain"
-
-
-class QueryResponse(BaseModel):
-    """Medical query response with Fallback Chain support."""
-    query: str
-    results: List[SearchResult] = []
-    total_results: int = 0
-    latency_ms: float = 0.0
-    langchain_results: int = 0
-    custom_rag_results: int = 0
-    # Fallback Chain fields
-    fallback_stage: str = "primary"
-    confidence: str = "high"
-    fallback_attempts: int = 0
-    max_score: float = 0.0
-    query_count_warning: str = ""
-    metadata: Dict[str, Any] = {}
-
-
-class IngestResponse(BaseModel):
-    """Article ingestion response."""
-    status: str
-    pmid: str = ""
-    vectors: int = 0
-    source_pipeline: str = "langchain"
-    vector_id_prefix: str = "lc_"
-    message: str = ""
-
-
-class SyncStatusResponse(BaseModel):
-    """Sync status response."""
-    langchain_vectors: int = 0
-    custom_rag_vectors: int = 0
-    total_vectors: int = 0
-    last_sync: Optional[str] = None
-    sync_enabled: bool = True
-    namespace: str = "pubmed"
+    source_filter: Optional[str] = Field(None, description="Filter by source")
 
 
 class HealthResponse(BaseModel):
     """Health check response."""
     status: str
-    service: str = "langchain-rag-service"
-    mode: str = "READ_WRITE"
-    services: Dict[str, str] = {}
+    service: str = "langchain-rag-proxy"
+    mode: str = "PROXY"
+    target_url: str = MEDICAL_RAG_URL
     timestamp: str = ""
-    version: str = "1.0.0"
 
 
-# ===== Application State =====
+# =============================================================================
+# APPLICATION STATE
+# =============================================================================
 
 class AppState:
     """Application state container."""
-    retrieval_engine = None
-    ingestion_pipeline = None
-    sync_manager = None
-    llm = None
+    http_client: Optional[httpx.AsyncClient] = None
     start_time: datetime = datetime.utcnow()
 
 
 state = AppState()
 
 
-# ===== Lifespan Management =====
+# =============================================================================
+# LIFESPAN MANAGEMENT
+# =============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler with comprehensive startup."""
+    """Application lifespan handler."""
     settings = get_settings()
-
-    # ===== STARTUP SEQUENCE =====
-
-    # Step 1: Print startup banner
-    print(_get_startup_banner(settings))
-
-    # Step 2: Initialize components
-    logger.info("[LangChain RAG] Initializing components...")
-
-    # Step 3: Validate configuration
-    _validate_config(settings)
-
-    # Step 4: Log service configuration
-    _log_configuration(settings)
-
-    # Step 5: Service ready
-    logger.info("[LangChain RAG] ✅ Service ready - components will initialize on demand")
-
+    
+    # Startup
+    logger.info("=" * 60)
+    logger.info("Starting LangChain RAG Proxy Service")
+    logger.info("=" * 60)
+    logger.info(f"Mode: PROXY (forwarding to {MEDICAL_RAG_URL})")
+    logger.info(f"Port: {settings.PORT}")
+    logger.info("-" * 60)
+    
+    # Initialize HTTP client
+    state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(PROXY_TIMEOUT),
+        follow_redirects=True,
+    )
+    
+    logger.info("Service ready - proxying to Medical RAG Service")
+    
     yield
-
-    # ===== SHUTDOWN =====
-    logger.info("[LangChain RAG] Shutting down...")
-
-    # Log final stats
-    if state.retrieval_engine:
-        logger.info(f"[LangChain RAG] Retrieval stats: {state.retrieval_engine.get_stats()}")
-
-    if state.ingestion_pipeline:
-        logger.info(f"[LangChain RAG] Ingestion stats: {state.ingestion_pipeline.get_stats()}")
-
-    logger.info("[LangChain RAG] Shutdown complete")
+    
+    # Shutdown
+    if state.http_client:
+        await state.http_client.aclose()
+    logger.info("Shutting down LangChain RAG Proxy Service...")
 
 
-def _get_startup_banner(settings) -> str:
-    """Generate comprehensive startup banner."""
-    return f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   ███    ███  █████  ██ ███    ███    ████████ ███████  █████   ██████      ║
-║   ████  ████ ██   ██ ██ ████  ████       ██    ██      ██   ██ ██    ██     ║
-║   ██ ████ ██ ███████ ██ ██ ████ ██       ██    █████   ███████ ██    ██     ║
-║   ██  ██  ██ ██   ██ ██ ██  ██  ██       ██    ██      ██   ██ ██    ██     ║
-║   ██      ██ ██   ██ ██ ██      ██       ██    ███████ ██   ██  ██████      ║
-║                                                                              ║
-║   ████████ ██████   █████  ██████  ████████                                 ║
-║      ██    ██   ██ ██   ██ ██   ██ ██                                        ║
-║      ██    ██████  ███████ ██████  ██████                                    ║
-║      ██    ██      ██   ██ ██   ██ ██                                        ║
-║      ██    ██      ██   ██ ██   ██ ████████                                 ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   📊 SERVICE CONFIGURATION                                                   ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Port:                 {settings.PORT:<10}                                          ║
-║   Mode:                 {settings.SERVICE_MODE:<10}   ✅ READ/WRITE ENABLED       ║
-║   Service:              {settings.SERVICE_NAME:<20}                              ║
-║                                                                              ║
-║   🗄️  PINECONE CONFIGURATION                                                 ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Index:                {settings.PINECONE_INDEX_NAME:<30}                  ║
-║   Namespace:            {settings.PINECONE_NAMESPACE:<10}   (SHARED with Custom RAG)       ║
-║   Dimension:            {settings.EMBEDDING_DIMENSION:<10}                              ║
-║                                                                              ║
-║   🔑 VECTOR ID STRATEGY                                                     ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Prefix:               {settings.VECTOR_ID_PREFIX:<10}   (e.g., lc_pmid_123_chunk_0)      ║
-║   Source Pipeline:      {settings.SOURCE_PIPELINE:<10}                              ║
-║   Conflict Avoidance:   ✅ ENABLED                                            ║
-║                                                                              ║
-║   🤖 EMBEDDING MODEL                                                        ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Model:                {settings.EMBEDDING_MODEL:<30}                     ║
-║   Device:               {settings.EMBEDDING_DEVICE:<10}                              ║
-║   Batch Size:           {settings.EMBEDDING_BATCH_SIZE:<10}                              ║
-║                                                                              ║
-║   🧠 LLM CONFIGURATION                                                      ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Provider:             Z.AI Direct                                          ║
-║   Model:                {settings.GLM_MODEL:<20}                         ║
-║   Max Tokens:           {settings.GLM_MAX_TOKENS:<10}                              ║
-║   Temperature:          {settings.GLM_TEMPERATURE:<10}                              ║
-║                                                                              ║
-║   🔄 SMART SYNC                                                             ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Enabled:              {'✅ YES' if settings.SYNC_ENABLED else '❌ NO':<10}                              ║
-║   Custom RAG URL:       {settings.CUSTOM_RAG_URL:<30}                     ║
-║   Batch Size:           {settings.SYNC_BATCH_SIZE:<10}                              ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   📡 API ENDPOINTS                                                          ║
-║   ────────────────────────────────────────────────────────────────────────   ║
-║   Health:     GET  /health                                                   ║
-║   Query:      POST /api/v1/query                                             ║
-║   Ingest:     POST /api/v1/ingest          (WRITE)                           ║
-║   Batch:      POST /api/v1/ingest/batch    (WRITE)                           ║
-║   Delete:     DELETE /api/v1/vectors/{{pmid}} (WRITE)                        ║
-║   Sync:       GET  /api/v1/sync/status                                       ║
-║   Import:     POST /api/v1/sync/import                                       ║
-║   Clear:      DELETE /api/v1/sync/clear                                      ║
-║   Stats:      GET  /api/v1/stats                                             ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-"""
-
-
-def _validate_config(settings):
-    """Validate critical configuration."""
-    issues = []
-
-    if settings.EMBEDDING_DIMENSION != 768:
-        issues.append(f"EMBEDDING_DIMENSION must be 768 (got {settings.EMBEDDING_DIMENSION})")
-
-    if settings.VECTOR_ID_PREFIX != "lc_":
-        issues.append(f"VECTOR_ID_PREFIX should be 'lc_' (got '{settings.VECTOR_ID_PREFIX}')")
-
-    if issues:
-        for issue in issues:
-            logger.warning(f"[LangChain RAG] ⚠️  Configuration issue: {issue}")
-    else:
-        logger.info("[LangChain RAG] ✅ Configuration validated")
-
-
-def _log_configuration(settings):
-    """Log service configuration details."""
-    logger.info(f"[LangChain RAG] Pinecone Index: {settings.PINECONE_INDEX_NAME}")
-    logger.info(f"[LangChain RAG] Namespace: {settings.PINECONE_NAMESPACE} (shared)")
-    logger.info(f"[LangChain RAG] Vector ID Prefix: {settings.VECTOR_ID_PREFIX}")
-    logger.info(f"[LangChain RAG] Source Pipeline: {settings.SOURCE_PIPELINE}")
-    logger.info(f"[LangChain RAG] Service Mode: {settings.SERVICE_MODE}")
-
-
-# ===== Create FastAPI App =====
-
-settings = get_settings()
+# =============================================================================
+# CREATE FASTAPI APP
+# =============================================================================
 
 app = FastAPI(
-    title="LangChain RAG Service",
+    title="LangChain RAG Proxy Service",
     description="""
-LangChain-based RAG service for medical diagnostics with READ/WRITE support.
+Thin HTTP proxy for the Medical RAG Service.
 
-## Features
-- **Shared Namespace**: Uses same Pinecone namespace as Custom RAG
-- **Vector ID Prefixing**: All vectors prefixed with `lc_` to avoid conflicts
-- **Source Tracking**: Metadata includes `source_pipeline: langchain`
-- **Smart Sync**: Synchronize between pipelines
-- **Full CRUD**: READ and WRITE operations supported
+All requests are forwarded to the authoritative Medical RAG Service on port 3031.
+This service exists for backward compatibility with external callers on port 3032.
 
-## Vector ID Format
-- LangChain: `lc_pmid_{pmid}_chunk_{index}`
-- Custom RAG: `pmid_{pmid}_chunk_{index}`
-
-## API Endpoints
-- `POST /api/v1/query` - Semantic search
-- `POST /api/v1/ingest` - Ingest single article
-- `POST /api/v1/ingest/batch` - Batch ingest articles
-- `DELETE /api/v1/vectors/{pmid}` - Delete vectors by PMID
-- `GET /api/v1/sync/status` - Check sync status
-- `POST /api/v1/sync/import` - Import from Custom RAG
-- `DELETE /api/v1/sync/clear` - Clear LangChain vectors
+## Proxied Endpoints
+All endpoints are forwarded unchanged to the Medical RAG Service.
     """,
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
 # CORS middleware
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
 
 
-# ===== Audit Logging Middleware =====
-
-@app.middleware("http")
-async def audit_log_middleware(request: Request, call_next):
-    """HIPAA-compliant audit logging."""
-    start_time = time.time()
-
-    log_data = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "method": request.method,
-        "path": request.url.path,
-        "client_ip": request.client.host if request.client else "unknown",
-    }
-
-    response = await call_next(request)
-
-    log_data["status_code"] = response.status_code
-    log_data["latency_ms"] = (time.time() - start_time) * 1000
-
-    if settings.AUDIT_LOGGING:
-        logger.info("API Request", extra=log_data)
-
-    return response
-
-
-# ===== Authentication =====
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
 
 async def verify_api_key(x_api_key: str = Header(None)) -> bool:
     """Verify API key for protected endpoints."""
     if not settings.API_SECRET_KEY:
         return True
-
+    
     if x_api_key != settings.API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
-
+    
     return True
 
 
-# ===== Health Check =====
+# =============================================================================
+# HEALTH CHECK
+# =============================================================================
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """Check service health status."""
+    """Check proxy health status."""
     return HealthResponse(
         status="healthy",
-        service="langchain-rag-service",
-        mode="READ_WRITE",
-        services={
-            "pinecone": "configured",
-            "llm": "configured" if settings.ZAI_API_KEY else "not_configured",
-            "sync": "enabled" if settings.SYNC_ENABLED else "disabled",
-        },
+        service="langchain-rag-proxy",
+        mode="PROXY",
+        target_url=MEDICAL_RAG_URL,
         timestamp=datetime.utcnow().isoformat(),
     )
 
 
-# ===== Query Endpoint =====
+@app.get("/health/deep", tags=["System"])
+async def deep_health_check():
+    """Check connectivity to upstream Medical RAG Service."""
+    try:
+        response = await state.http_client.get(f"{MEDICAL_RAG_URL}/health")
+        return {
+            "status": "healthy" if response.status_code == 200 else "degraded",
+            "proxy": "healthy",
+            "upstream_status": response.status_code,
+            "upstream_url": MEDICAL_RAG_URL,
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "proxy": "healthy",
+            "upstream_status": "unreachable",
+            "upstream_url": MEDICAL_RAG_URL,
+            "error": str(e),
+        }
 
-@app.post("/api/v1/query", response_model=QueryResponse, tags=["RAG"])
+
+# =============================================================================
+# PROXY HELPER
+# =============================================================================
+
+async def proxy_request(
+    method: str,
+    path: str,
+    request: Request,
+    json_body: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Forward a request to the Medical RAG Service.
+    
+    Args:
+        method: HTTP method (GET, POST, DELETE, etc.)
+        path: API path (e.g., "/api/v1/query")
+        request: Original FastAPI request object
+        json_body: Optional JSON body for POST/PUT requests
+    
+    Returns:
+        Response from Medical RAG Service
+    """
+    url = f"{MEDICAL_RAG_URL}{path}"
+    
+    # Forward headers (except Host)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    
+    try:
+        if method.upper() == "GET":
+            response = await state.http_client.get(url, headers=headers)
+        elif method.upper() == "POST":
+            response = await state.http_client.post(url, headers=headers, json=json_body)
+        elif method.upper() == "PUT":
+            response = await state.http_client.put(url, headers=headers, json=json_body)
+        elif method.upper() == "DELETE":
+            response = await state.http_client.delete(url, headers=headers)
+        else:
+            raise HTTPException(status_code=405, detail=f"Method {method} not supported")
+        
+        # Return response
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
+            )
+        
+        return response.json()
+        
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Gateway timeout - Medical RAG Service not responding")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Bad gateway - {str(e)}")
+
+
+# =============================================================================
+# PROXIED ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/query", tags=["RAG"])
 async def query_medical_literature(
     request: QueryRequest,
     authenticated: bool = Depends(verify_api_key),
 ):
     """
-    Query medical literature with RAG and Fallback Chain.
-
-    Query Processing Flow:
-    1. Cache Check → Multi-Query Retrieval → Cross-Encoder Re-Ranking
-    2. Threshold Check: max_score >= 0.60?
-    3. If FAIL: Activate Fallback Chain
-       - Fallback 1: Lower Threshold (0.40)
-       - Fallback 2: Simplified Query
-       - Fallback 3: Direct LLM (No RAG)
-
-    Returns results from both LangChain and Custom RAG pipelines,
-    identified by `source_pipeline` metadata.
+    Query medical literature with RAG.
+    
+    Proxied to Medical RAG Service (Port 3031).
     """
-    start_time = time.time()
-
-    try:
-        from app.retrieval.rag_engine import LangChainRetrievalEngine
-
-        # Initialize retrieval engine
-        if state.retrieval_engine is None:
-            state.retrieval_engine = LangChainRetrievalEngine(top_k=request.top_k)
-
-        # Retrieve with fallback chain
-        result = await state.retrieval_engine.retrieve(
-            query=request.query,
-            top_k=request.top_k,
-            min_score=request.min_score,
-            specialty=request.specialty,
-            source_filter=request.source_filter,
-            user_id=request.patient_context.get("user_id", "default") if request.patient_context else "default",
-        )
-
-        # Format results
-        formatted_results = []
-        for doc in result.documents:
-            formatted_results.append(SearchResult(
-                id=doc.id,
-                score=doc.score,
-                pmid=doc.pmid,
-                title=doc.title,
-                abstract=doc.abstract[:500],
-                journal=doc.journal,
-                publication_date=doc.publication_date,
-                source_pipeline=doc.source_pipeline,
-            ))
-
-        latency_ms = (time.time() - start_time) * 1000
-
-        return QueryResponse(
-            query=request.query,
-            results=formatted_results,
-            total_results=len(formatted_results),
-            latency_ms=latency_ms,
-            langchain_results=result.langchain_results,
-            custom_rag_results=result.custom_rag_results,
-            fallback_stage=result.fallback_stage,
-            confidence=result.confidence,
-            fallback_attempts=result.fallback_attempts,
-            max_score=result.max_score,
-            metadata={
-                "source_filter": request.source_filter,
-                "specialty": request.specialty,
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"Query error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await proxy_request(
+        "POST",
+        "/api/v1/query",
+        request=Request,
+        json_body=request.dict(),
+    )
 
 
-# ===== Ingestion Endpoints (WRITE) =====
-
-@app.post("/api/v1/ingest", response_model=IngestResponse, tags=["Ingestion"])
-async def ingest_article(
-    request: IngestRequest,
+@app.post("/api/v1/rag-query", tags=["P9 - RAG Pipeline"])
+async def rag_query(
+    query: str,
+    chief_complaint: Optional[str] = None,
+    top_k: int = 10,
+    namespaces: Optional[List[str]] = None,
     authenticated: bool = Depends(verify_api_key),
 ):
     """
-    Ingest a single article into Pinecone.
-
-    Creates vectors with:
-    - ID: lc_pmid_{pmid}_chunk_{index}
-    - Metadata: source_pipeline='langchain'
+    P9: Hybrid RAG query with namespace routing.
+    
+    Proxied to Medical RAG Service (Port 3031).
     """
-    try:
-        from app.embedding.embedding_pipeline import LangChainIngestionPipeline
-
-        # Initialize pipeline
-        if state.ingestion_pipeline is None:
-            state.ingestion_pipeline = LangChainIngestionPipeline()
-
-        # Convert request to article dict
-        article = {
-            "pmid": request.pmid,
-            "title": request.title,
-            "abstract": request.abstract,
-            "journal": request.journal,
-            "publication_date": request.publication_date,
-            "authors": request.authors or [],
-            "mesh_terms": request.mesh_terms or [],
-            "doi": request.doi,
-            "pmc_id": request.pmc_id,
-        }
-
-        # Ingest
-        result = await state.ingestion_pipeline.ingest_article(article)
-
-        return IngestResponse(
-            status="success",
-            pmid=request.pmid,
-            vectors=result.get("vectors", 0),
-            source_pipeline="langchain",
-            vector_id_prefix="lc_",
-            message=f"Ingested article with {result.get('vectors', 0)} vectors",
-        )
-
-    except Exception as e:
-        logger.error(f"Ingestion error: {e}")
-        return IngestResponse(
-            status="error",
-            pmid=request.pmid,
-            message=str(e),
-        )
-
-
-@app.post("/api/v1/ingest/batch", tags=["Ingestion"])
-async def batch_ingest_articles(
-    request: BatchIngestRequest,
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    Batch ingest articles into Pinecone.
-
-    All vectors will have:
-    - ID: lc_pmid_{pmid}_chunk_{index}
-    - Metadata: source_pipeline='langchain'
-    """
-    try:
-        from app.embedding.embedding_pipeline import LangChainIngestionPipeline
-
-        # Initialize pipeline
-        if state.ingestion_pipeline is None:
-            state.ingestion_pipeline = LangChainIngestionPipeline()
-
-        # Convert requests to article dicts
-        articles = [
-            {
-                "pmid": article.pmid,
-                "title": article.title,
-                "abstract": article.abstract,
-                "journal": article.journal,
-                "publication_date": article.publication_date,
-                "authors": article.authors or [],
-                "mesh_terms": article.mesh_terms or [],
-                "doi": article.doi,
-                "pmc_id": article.pmc_id,
-            }
-            for article in request.articles
-        ]
-
-        # Batch ingest
-        result = await state.ingestion_pipeline.ingest_articles_batch(articles)
-
-        return {
-            "status": "success",
-            "source_pipeline": "langchain",
-            "vector_id_prefix": "lc_",
-            **result,
-        }
-
-    except Exception as e:
-        logger.error(f"Batch ingestion error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/v1/vectors/{pmid}", tags=["Ingestion"])
-async def delete_vectors_by_pmid(
-    pmid: str,
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    Delete all LangChain vectors for a given PMID.
-
-    Only deletes vectors with `lc_` prefix.
-    """
-    try:
-        from app.embedding.embedding_pipeline import LangChainIngestionPipeline
-
-        # Initialize pipeline
-        if state.ingestion_pipeline is None:
-            state.ingestion_pipeline = LangChainIngestionPipeline()
-
-        result = await state.ingestion_pipeline.delete_vectors_by_pmid(pmid)
-
-        return {
-            "status": "success",
-            "pmid": pmid,
-            "source_pipeline": "langchain",
-            "message": f"Deleted LangChain vectors for PMID: {pmid}",
-            **result,
-        }
-
-    except Exception as e:
-        logger.error(f"Delete error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ===== Smart Sync Endpoints =====
-
-@app.get("/api/v1/sync/status", response_model=SyncStatusResponse, tags=["Sync"])
-async def get_sync_status():
-    """
-    Get sync status between LangChain and Custom RAG pipelines.
-
-    Returns counts of vectors from each pipeline.
-    """
-    try:
-        from app.sync.smart_sync import SmartSyncManager
-
-        # Initialize sync manager
-        if state.sync_manager is None:
-            state.sync_manager = SmartSyncManager()
-
-        status = await state.sync_manager.get_sync_status()
-
-        return SyncStatusResponse(
-            langchain_vectors=status.langchain_vectors,
-            custom_rag_vectors=status.custom_rag_vectors,
-            total_vectors=status.total_vectors,
-            last_sync=status.last_sync,
-            sync_enabled=status.sync_enabled,
-            namespace=status.to_dict().get("namespace", "pubmed"),
-        )
-
-    except Exception as e:
-        logger.error(f"Sync status error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/sync/import", tags=["Sync"])
-async def import_from_custom_rag(
-    max_vectors: int = 1000,
-    overwrite: bool = False,
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    Import vectors from Custom RAG to LangChain pipeline.
-
-    Creates new vectors with `lc_` prefix from existing Custom RAG vectors.
-    """
-    try:
-        from app.sync.smart_sync import SmartSyncManager
-
-        # Initialize sync manager
-        if state.sync_manager is None:
-            state.sync_manager = SmartSyncManager()
-
-        result = await state.sync_manager.import_from_custom_rag(
-            max_vectors=max_vectors,
-            overwrite=overwrite,
-        )
-
-        return result.to_dict()
-
-    except Exception as e:
-        logger.error(f"Import error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/v1/sync/clear", tags=["Sync"])
-async def clear_langchain_vectors(
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    Delete all LangChain vectors (with `lc_` prefix).
-
-    This preserves Custom RAG vectors.
-    """
-    try:
-        from app.sync.smart_sync import SmartSyncManager
-
-        # Initialize sync manager
-        if state.sync_manager is None:
-            state.sync_manager = SmartSyncManager()
-
-        result = await state.sync_manager.clear_langchain_vectors()
-
-        return result.to_dict()
-
-    except Exception as e:
-        logger.error(f"Clear error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ===== Stats Endpoint =====
-
-@app.get("/api/v1/stats", tags=["Monitoring"])
-async def get_service_stats():
-    """Get service statistics including Fallback Chain metrics."""
-    stats = {
-        "service": "langchain-rag-service",
-        "mode": "READ_WRITE",
-        "uptime_seconds": (datetime.utcnow() - state.start_time).total_seconds(),
-        "vector_id_prefix": "lc_",
-        "source_pipeline": "langchain",
-        "retrieval": {},
-        "ingestion": {},
-        "llm": {},
-        "fallback_chain": {
-            "enabled": True,
-            "thresholds": {
-                "primary": 0.60,
-                "fallback_1": 0.40,
-                "fallback_2": 0.25,
-            },
-            "query_count_limits": {
-                "soft_limit": 10,
-                "hard_limit": 50,
-            },
-        },
+    from typing import List
+    
+    body = {
+        "query": query,
+        "chief_complaint": chief_complaint,
+        "top_k": top_k,
     }
-
-    if state.retrieval_engine:
-        retrieval_stats = state.retrieval_engine.get_stats()
-        stats["retrieval"] = retrieval_stats
-        
-        # Add fallback chain specific stats
-        if "fallback_1_count" in retrieval_stats:
-            stats["fallback_chain"]["activations"] = {
-                "total": retrieval_stats.get("fallback_activations", 0),
-                "fallback_1_lower_threshold": retrieval_stats.get("fallback_1_count", 0),
-                "fallback_2_simplified_query": retrieval_stats.get("fallback_2_count", 0),
-                "fallback_3_direct_llm": retrieval_stats.get("fallback_3_count", 0),
-                "all_failed": retrieval_stats.get("all_failed_count", 0),
-            }
-
-    if state.ingestion_pipeline:
-        stats["ingestion"] = state.ingestion_pipeline.get_stats()
-
-    if state.llm:
-        stats["llm"] = state.llm.get_stats()
-
-    return stats
+    if namespaces:
+        body["namespaces"] = namespaces
+    
+    return await proxy_request(
+        "POST",
+        "/api/v1/rag-query",
+        request=Request,
+        json_body=body,
+    )
 
 
-# ===== Specialties Endpoint =====
+@app.post("/api/v1/diagnose", tags=["Diagnostic"])
+async def diagnose_patient(
+    request: Dict[str, Any],
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    Generate diagnostic recommendation.
+    
+    Proxied to Medical RAG Service (Port 3031).
+    """
+    return await proxy_request(
+        "POST",
+        "/api/v1/diagnose",
+        request=Request,
+        json_body=request,
+    )
+
+
+@app.post("/api/v1/ingest", tags=["Ingestion"])
+async def ingest_articles(
+    request: Dict[str, Any],
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    Ingest articles from PubMed.
+    
+    Proxied to Medical RAG Service (Port 3031).
+    """
+    return await proxy_request(
+        "POST",
+        "/api/v1/ingest",
+        request=Request,
+        json_body=request,
+    )
+
+
+@app.post("/api/v1/ingestion/namespace/{namespace}", tags=["P9 - Ingestion"])
+async def ingest_namespace(
+    namespace: str,
+    max_articles: int = 500,
+    force: bool = False,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Ingest articles for a specific clinical namespace.
+    
+    Proxied to Medical RAG Service (Port 3031).
+    """
+    return await proxy_request(
+        "POST",
+        f"/api/v1/ingestion/namespace/{namespace}?max_articles={max_articles}&force={force}",
+        request=Request,
+    )
+
+
+@app.post("/api/v1/ingestion/all-namespaces", tags=["P9 - Ingestion"])
+async def ingest_all_namespaces(
+    max_articles_per_namespace: int = 500,
+    force: bool = False,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Ingest articles for all clinical namespaces.
+    
+    Proxied to Medical RAG Service (Port 3031).
+    """
+    return await proxy_request(
+        "POST",
+        f"/api/v1/ingestion/all-namespaces?max_articles_per_namespace={max_articles_per_namespace}&force={force}",
+        request=Request,
+    )
+
+
+@app.get("/api/v1/ingestion/status", tags=["P9 - Ingestion"])
+async def get_ingestion_status():
+    """
+    P9: Get ingestion status for all namespaces.
+    
+    Proxied to Medical RAG Service (Port 3031).
+    """
+    return await proxy_request(
+        "GET",
+        "/api/v1/ingestion/status",
+        request=Request,
+    )
+
+
+@app.get("/api/v1/scheduler/status", tags=["Scheduler"])
+async def get_scheduler_status():
+    """Get scheduler status. Proxied to Medical RAG Service."""
+    return await proxy_request(
+        "GET",
+        "/api/v1/scheduler/status",
+        request=Request,
+    )
+
 
 @app.get("/api/v1/specialties", tags=["Reference"])
 async def get_specialties():
-    """Get available medical specialties with MeSH terms."""
-    return {
-        "specialties": MESH_SPECIALTIES,
-        "total": len(MESH_SPECIALTIES),
-    }
-
-
-# =============================================================================
-# P3: ENHANCED CROSS-PIPELINE SYNC ENDPOINTS
-# =============================================================================
-
-@app.post("/api/v1/sync/bidirectional", tags=["P3 - Sync"])
-async def bidirectional_sync(
-    max_vectors: int = 1000,
-    conflict_strategy: str = "medical_wins",
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    P3: Perform bidirectional sync between Medical RAG and LangChain RAG.
-
-    Conflict strategies: medical_wins, langchain_wins, newest_wins, keep_both, manual
-    """
-    from app.sync.enhanced_sync import get_enhanced_sync, ConflictStrategy
-
-    sync = get_enhanced_sync()
-
-    try:
-        strategy = ConflictStrategy(conflict_strategy)
-    except ValueError:
-        strategy = ConflictStrategy.MEDICAL_WINS
-
-    result = await sync.sync_bidirectional(
-        max_vectors=max_vectors,
-        conflict_strategy=strategy,
+    """Get available specialties. Proxied to Medical RAG Service."""
+    return await proxy_request(
+        "GET",
+        "/api/v1/specialties",
+        request=Request,
     )
 
-    return result.to_dict()
 
-
-@app.post("/api/v1/sync/incremental", tags=["P3 - Sync"])
-async def incremental_sync(
-    since_hours: int = 24,
+@app.post("/api/v1/hybrid-query", tags=["P1 - Hybrid Retrieval"])
+async def hybrid_query(
+    request: Dict[str, Any],
     authenticated: bool = Depends(verify_api_key),
 ):
     """
-    P3: Perform incremental sync based on changes since specified time.
-
-    Only processes vectors that have changed.
+    P1: Hybrid retrieval with BM25 + Semantic search.
+    
+    Proxied to Medical RAG Service (Port 3031).
     """
-    from app.sync.enhanced_sync import get_enhanced_sync
-    from datetime import datetime, timedelta
-
-    sync = get_enhanced_sync()
-    since = datetime.utcnow() - timedelta(hours=since_hours)
-
-    result = await sync.sync_incremental(since=since)
-
-    return result.to_dict()
+    return await proxy_request(
+        "POST",
+        "/api/v1/hybrid-query",
+        request=Request,
+        json_body=request,
+    )
 
 
-@app.get("/api/v1/sync/health", tags=["P3 - Sync"])
-async def get_sync_health():
-    """
-    P3: Get health status of cross-pipeline synchronization.
-
-    Returns sync health, divergence score, and pending conflicts.
-    """
-    from app.sync.enhanced_sync import get_enhanced_sync
-
-    sync = get_enhanced_sync()
-    result = await sync.check_health()
-
-    return result.to_dict()
-
-
-@app.get("/api/v1/sync/conflicts", tags=["P3 - Sync"])
-async def get_sync_conflicts():
-    """P3: Get all pending sync conflicts requiring manual resolution."""
-    from app.sync.enhanced_sync import get_enhanced_sync
-
-    sync = get_enhanced_sync()
-    conflicts = await sync.get_conflicts()
-
-    return {
-        "conflicts": [c.to_dict() for c in conflicts],
-        "total": len(conflicts),
-    }
-
-
-@app.post("/api/v1/sync/conflicts/resolve", tags=["P3 - Sync"])
-async def resolve_sync_conflict(
-    pmid: str,
-    chunk_index: int,
-    resolution: str,
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    P3: Manually resolve a sync conflict.
-
-    Resolution options: medical, langchain, keep_both
-    """
-    from app.sync.enhanced_sync import get_enhanced_sync
-
-    sync = get_enhanced_sync()
-    success = await sync.resolve_conflict(pmid, chunk_index, resolution)
-
-    return {
-        "success": success,
-        "pmid": pmid,
-        "chunk_index": chunk_index,
-        "resolution": resolution,
-    }
-
-
-@app.get("/api/v1/sync/history", tags=["P3 - Sync"])
-async def get_sync_history(limit: int = 10):
-    """P3: Get recent sync operation history."""
-    from app.sync.enhanced_sync import get_enhanced_sync
-
-    sync = get_enhanced_sync()
-    history = await sync.get_sync_history(limit=limit)
-
-    return {
-        "operations": [op.to_dict() for op in history],
-        "total": len(history),
-    }
+@app.get("/api/v1/hybrid/stats", tags=["P1 - Hybrid Retrieval"])
+async def get_hybrid_stats():
+    """P1: Get hybrid retrieval statistics. Proxied to Medical RAG Service."""
+    return await proxy_request(
+        "GET",
+        "/api/v1/hybrid/stats",
+        request=Request,
+    )
 
 
 # =============================================================================
-# P1: BM25 SYNC FROM MEDICAL RAG
+# CATCH-ALL PROXY FOR UNMATCHED ROUTES
 # =============================================================================
 
-@app.post("/api/v1/sync/bm25-from-medical", tags=["P1 - Hybrid Sync"])
-async def sync_bm25_from_medical_rag(
-    max_docs: int = 10000,
-    authenticated: bool = Depends(verify_api_key),
-):
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def catch_all_proxy(request: Request, path: str):
     """
-    P1: Sync BM25 index from Medical RAG service.
-
-    This calls Medical RAG's hybrid sync endpoint to populate the BM25 index.
-    Used for cross-pipeline hybrid retrieval integration.
-
-    Architecture:
-    - Medical RAG (Port 3031): Has full P1 hybrid retrieval (BM25 + Semantic)
-    - LangChain RAG (Port 3032): Can sync BM25 index for hybrid queries
+    Catch-all proxy for any unmatched routes.
+    
+    Forwards all requests to the Medical RAG Service.
     """
-    import httpx
-
-    settings = get_settings()
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid/sync-from-pinecone",
-                params={"max_docs": max_docs},
-                headers={"X-API-Key": settings.CUSTOM_RAG_API_KEY},
-                timeout=60.0,
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {
-                    "status": "error",
-                    "error": f"Medical RAG returned status {response.status_code}",
-                    "details": response.text,
-                }
-
-    except Exception as e:
-        logger.error(f"BM25 sync from Medical RAG failed: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-        }
+    # Get request body if present
+    body = None
+    if request.method in ["POST", "PUT", "PATCH"]:
+        try:
+            body = await request.json()
+        except:
+            body = None
+    
+    return await proxy_request(
+        request.method,
+        f"/{path}",
+        request=request,
+        json_body=body,
+    )
 
 
-@app.get("/api/v1/sync/bm25-stats", tags=["P1 - Hybrid Sync"])
-async def get_medical_bm25_stats():
-    """
-    P1: Get BM25 index statistics from Medical RAG service.
-
-    Returns BM25 index info including document count and vocabulary size.
-    """
-    import httpx
-
-    settings = get_settings()
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid/stats",
-                headers={"X-API-Key": settings.CUSTOM_RAG_API_KEY},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {
-                    "status": "error",
-                    "error": f"Medical RAG returned status {response.status_code}",
-                }
-
-    except Exception as e:
-        logger.error(f"Failed to get BM25 stats from Medical RAG: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-        }
-
-
-@app.post("/api/v1/hybrid-proxy-query", tags=["P1 - Hybrid Sync"])
-async def proxy_hybrid_query_to_medical_rag(
-    query: str,
-    top_k: int = 50,
-    min_score: float = 0.3,
-    enable_expansion: bool = True,
-    use_multi_query: bool = True,
-    decompose_complex: bool = True,
-    authenticated: bool = Depends(verify_api_key),
-):
-    """
-    P1: Proxy hybrid query to Medical RAG service.
-
-    This allows LangChain RAG clients to use the full hybrid retrieval
-    capabilities of Medical RAG through this proxy endpoint.
-
-    Features:
-    - BM25 keyword search with medical synonym support
-    - Semantic search with PubMedBERT embeddings
-    - Reciprocal Rank Fusion (RRF)
-    - Recency-weighted scoring
-    - Multi-query generation
-    - Query decomposition
-    """
-    import httpx
-
-    settings = get_settings()
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.CUSTOM_RAG_URL}/api/v1/hybrid-query",
-                json={
-                    "query": query,
-                    "top_k": top_k,
-                    "min_score": min_score,
-                    "enable_expansion": enable_expansion,
-                    "use_multi_query": use_multi_query,
-                    "decompose_complex": decompose_complex,
-                },
-                headers={
-                    "X-API-Key": settings.CUSTOM_RAG_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                timeout=30.0,
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Medical RAG query failed: {response.text}",
-                )
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Medical RAG query timed out")
-    except Exception as e:
-        logger.error(f"Hybrid proxy query failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ===== Error Handlers =====
+# =============================================================================
+# ERROR HANDLERS
+# =============================================================================
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -1014,7 +483,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "error": exc.detail,
             "status_code": exc.status_code,
             "timestamp": datetime.utcnow().isoformat(),
-            "service": "langchain-rag-service",
+            "service": "langchain-rag-proxy",
         }
     )
 
@@ -1027,20 +496,33 @@ async def general_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc) if settings.DEBUG else "An error occurred",
+            "detail": str(exc),
             "timestamp": datetime.utcnow().isoformat(),
-            "service": "langchain-rag-service",
+            "service": "langchain-rag-proxy",
         }
     )
 
 
-# ===== Main Entry Point =====
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
 
 if __name__ == "__main__":
+    import uvicorn
+    
     settings = get_settings()
-
-    print(_get_startup_banner(settings))
-
+    
+    print(f"""
+    ╔════════════════════════════════════════════════════════════╗
+    ║     LangChain RAG Proxy Service                            ║
+    ║                                                            ║
+    ║     PROXY MODE: Forwarding to {MEDICAL_RAG_URL:<24}  ║
+    ║                                                            ║
+    ║     Port: {settings.PORT}                                              ║
+    ║     Docs: http://localhost:{settings.PORT}/docs                       ║
+    ╚════════════════════════════════════════════════════════════╝
+    """)
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

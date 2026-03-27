@@ -4098,6 +4098,287 @@ async def list_chief_complaints():
     }
 
 
+# =============================================================================
+# P9: CONSOLIDATED RAG PIPELINE WITH PUBMED/PINECONE INGESTION
+# =============================================================================
+
+class RAGQueryRequest(BaseModel):
+    """P9: RAG query request with chief complaint routing."""
+    query: str = Field(..., description="Medical query text", min_length=3, max_length=5000)
+    chief_complaint: Optional[str] = Field(None, description="Chief complaint for namespace routing")
+    top_k: int = Field(10, ge=1, le=50, description="Number of results to retrieve")
+    namespaces: Optional[List[str]] = Field(None, description="Optional list of namespaces to query")
+
+
+class RAGQueryResponse(BaseModel):
+    """P9: RAG query response with sources and citations."""
+    query: str
+    expanded_query: str
+    namespaces_queried: List[str]
+    sources: List[Dict[str, Any]]
+    total_results: int
+    pmids_in_context: List[str]
+    citation_warning: bool = False
+    hallucinated_pmids: List[str] = []
+    latency_ms: float
+
+
+@app.post("/api/v1/rag-query", response_model=RAGQueryResponse, tags=["P9 - RAG Pipeline"])
+async def rag_query(
+    request: RAGQueryRequest,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Hybrid RAG query with namespace routing and citation validation.
+    
+    Features:
+    - Dense vector search via Pinecone
+    - Sparse BM25 search via local index
+    - RRF result combination
+    - MeSH synonym expansion
+    - Namespace routing based on chief complaint
+    - Citation validation (PMID hallucination detection)
+    
+    Returns sources with PMIDs for evidence-based clinical decision support.
+    """
+    start_time = time.time()
+    
+    try:
+        from app.retrieval.retrieval_pipeline import get_retrieval_pipeline
+        
+        pipeline = get_retrieval_pipeline()
+        
+        result = await pipeline.retrieve(
+            query=request.query,
+            chief_complaint=request.chief_complaint,
+            top_k=request.top_k,
+            namespaces=request.namespaces,
+        )
+        
+        # Format sources
+        sources = []
+        for chunk in result.chunks:
+            sources.append({
+                "pmid": chunk.pmid,
+                "title": chunk.title,
+                "chunk_text": chunk.chunk_text[:300],
+                "journal": chunk.journal,
+                "publication_year": chunk.publication_year,
+                "mesh_terms": chunk.mesh_terms[:5],
+                "namespace": chunk.namespace,
+                "scores": {
+                    "dense": round(chunk.dense_score, 4),
+                    "bm25": round(chunk.bm25_score, 4),
+                    "rrf": round(chunk.rrf_score, 4),
+                },
+            })
+        
+        latency_ms = (time.time() - start_time) * 1000
+        
+        return RAGQueryResponse(
+            query=result.query,
+            expanded_query=result.expanded_query,
+            namespaces_queried=result.namespaces_queried,
+            sources=sources,
+            total_results=len(sources),
+            pmids_in_context=list(result.pmids_in_context),
+            citation_warning=False,
+            hallucinated_pmids=[],
+            latency_ms=latency_ms,
+        )
+        
+    except Exception as e:
+        logger.error(f"RAG query error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ingestion/namespace/{namespace}", tags=["P9 - Ingestion"])
+async def ingest_namespace(
+    namespace: str,
+    max_articles: int = 500,
+    force: bool = False,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Ingest articles for a specific clinical namespace.
+    
+    Namespaces:
+    - pubmed_infectious: Infectious disease + antimicrobials
+    - pubmed_cardiology: Cardiovascular diseases
+    - pubmed_nephrology: Kidney diseases + renal dosing
+    - pubmed_pulmonology: Lung diseases + respiratory
+    - pubmed_emergency: Emergency medicine + triage
+    - pubmed_pharmacology: Drug interactions + adverse reactions
+    - pubmed_neurology: Nervous system diseases
+    
+    Uses NCBI E-utilities API with MeSH query for each namespace.
+    Chunks abstracts and embeds via Together AI.
+    Upserts to Pinecone with metadata.
+    """
+    try:
+        from app.ingestion.pubmed_ingestor import get_pubmed_ingestor, CLINICAL_NAMESPACES
+        
+        if namespace not in CLINICAL_NAMESPACES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid namespace. Use: {list(CLINICAL_NAMESPACES.keys())}"
+            )
+        
+        ingestor = get_pubmed_ingestor()
+        mesh_query = CLINICAL_NAMESPACES[namespace]
+        
+        result = await ingestor.ingest_namespace(
+            namespace=namespace,
+            mesh_query=mesh_query,
+            max_articles=max_articles,
+            force=force,
+        )
+        
+        return result.to_dict()
+        
+    except Exception as e:
+        logger.error(f"Ingestion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ingestion/all-namespaces", tags=["P9 - Ingestion"])
+async def ingest_all_namespaces(
+    max_articles_per_namespace: int = 500,
+    force: bool = False,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Ingest articles for all clinical namespaces.
+    
+    Ingests 7 namespaces automatically:
+    - pubmed_infectious
+    - pubmed_cardiology
+    - pubmed_nephrology
+    - pubmed_pulmonology
+    - pubmed_emergency
+    - pubmed_pharmacology
+    - pubmed_neurology
+    
+    Skips namespaces ingested within 90 days unless force=True.
+    """
+    try:
+        from app.ingestion.pubmed_ingestor import get_pubmed_ingestor
+        
+        ingestor = get_pubmed_ingestor()
+        results = await ingestor.ingest_all_namespaces(
+            max_articles_per_namespace=max_articles_per_namespace,
+            force=force,
+        )
+        
+        return {
+            "status": "completed",
+            "results": {ns: r.to_dict() for ns, r in results.items()},
+        }
+        
+    except Exception as e:
+        logger.error(f"All namespace ingestion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ingestion/status", tags=["P9 - Ingestion"])
+async def get_ingestion_status():
+    """
+    P9: Get ingestion status for all namespaces.
+    
+    Returns:
+    - Last ingestion timestamp per namespace
+    - Article and chunk counts
+    - 90-day re-ingestion schedule status
+    """
+    try:
+        from app.ingestion.pubmed_ingestor import get_pubmed_ingestor
+        
+        ingestor = get_pubmed_ingestor()
+        return ingestor.get_ingestion_status()
+        
+    except Exception as e:
+        logger.error(f"Failed to get ingestion status: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/v1/bm25/sync/{namespace}", tags=["P9 - BM25"])
+async def sync_bm25_index(
+    namespace: str,
+    max_docs: int = 1000,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    P9: Sync BM25 index from Pinecone vectors for a namespace.
+    
+    Populates the local BM25 index for hybrid retrieval.
+    Required for sparse leg of RRF fusion.
+    """
+    try:
+        from app.retrieval.retrieval_pipeline import get_retrieval_pipeline
+        
+        pipeline = get_retrieval_pipeline()
+        result = await pipeline.sync_bm25_from_pinecone(namespace, max_docs)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"BM25 sync error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/citations/validate", tags=["P9 - Citations"])
+async def validate_citations(
+    cited_pmids: List[str],
+    context_pmids: List[str],
+):
+    """
+    P9: Validate cited PMIDs against context.
+    
+    Returns:
+    - valid_pmids: PMIDs found in context
+    - hallucinated_pmids: PMIDs NOT in context (potential hallucinations)
+    - citation_warning: True if any hallucinated PMIDs detected
+    """
+    try:
+        from app.retrieval.retrieval_pipeline import get_retrieval_pipeline
+        
+        pipeline = get_retrieval_pipeline()
+        valid, hallucinated = pipeline.validate_citations(
+            cited_pmids, set(context_pmids)
+        )
+        
+        return {
+            "valid_pmids": valid,
+            "hallucinated_pmids": hallucinated,
+            "citation_warning": len(hallucinated) > 0,
+            "total_cited": len(cited_pmids),
+            "total_valid": len(valid),
+            "total_hallucinated": len(hallucinated),
+        }
+        
+    except Exception as e:
+        logger.error(f"Citation validation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/namespaces", tags=["P9 - Reference"])
+async def list_namespaces():
+    """P9: List all available Pinecone namespaces with MeSH queries."""
+    from app.ingestion.pubmed_ingestor import CLINICAL_NAMESPACES
+    
+    return {
+        "namespaces": [
+            {
+                "name": name,
+                "mesh_query": query,
+                "description": name.replace("pubmed_", "").replace("_", " ").title(),
+            }
+            for name, query in CLINICAL_NAMESPACES.items()
+        ],
+        "total": len(CLINICAL_NAMESPACES),
+    }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

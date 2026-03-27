@@ -1,6 +1,6 @@
 """
-P2: Prometheus Metrics Export for Clinical Decision Support System
-==================================================================
+P2 + P13: Prometheus Metrics Export for Clinical Decision Support System
+=========================================================================
 
 Exports metrics in Prometheus format for monitoring:
 - Request counts and latencies
@@ -10,7 +10,19 @@ Exports metrics in Prometheus format for monitoring:
 - LLM token usage
 - Retrieval precision
 
+P13 Additional Metrics:
+- pubmed_ingestion_articles_total: Articles ingested by namespace
+- pinecone_query_latency_seconds: Query latency by namespace
+- rag_citation_count: Citations per query
+- rag_top_cosine_score: Top similarity score
+- llm_request_latency_seconds: LLM call latency by model
+- clinical_errors_total: Errors by type
+
 Endpoint: GET /metrics
+
+Evidence Sources:
+- Prometheus Best Practices: https://prometheus.io/docs/practices/naming/
+- HIPAA Monitoring: 45 CFR 164.312(b)
 """
 
 import time
@@ -51,7 +63,7 @@ class Metric:
 
 class ClinicalMetricsRegistry:
     """
-    P2: Prometheus metrics registry for Clinical Decision Support System.
+    P2 + P13: Prometheus metrics registry for Clinical Decision Support System.
     
     Metrics Categories:
     1. Request Metrics - counts, latencies, errors
@@ -60,6 +72,8 @@ class ClinicalMetricsRegistry:
     4. Retrieval Metrics - precision, recall, relevance scores
     5. Cache Metrics - hit rate, evictions
     6. LLM Metrics - token usage, latency by model
+    7. P13 Ingestion Metrics - articles ingested, chunks upserted
+    8. P13 Error Metrics - clinical errors by type
     """
     
     # Metric name prefixes
@@ -260,8 +274,129 @@ class ClinicalMetricsRegistry:
             description="Number of active connections",
         )
         
+        # =====================================================================
+        # P13: Additional Custom Metrics
+        # =====================================================================
+        
+        # PubMed Ingestion Metrics
+        self._register_metric(
+            name="pubmed_ingestion_articles_total",
+            metric_type=MetricType.COUNTER,
+            description="Total number of articles ingested from PubMed by namespace",
+        )
+        
+        self._register_metric(
+            name="pubmed_ingestion_chunks_upserted_total",
+            metric_type=MetricType.COUNTER,
+            description="Total number of chunks upserted to Pinecone",
+        )
+        
+        # Pinecone Query Metrics
+        self._register_metric(
+            name="pinecone_query_latency_seconds",
+            metric_type=MetricType.HISTOGRAM,
+            description="Pinecone query latency in seconds by namespace",
+            buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+        )
+        
+        self._register_metric(
+            name="pinecone_upsert_latency_seconds",
+            metric_type=MetricType.HISTOGRAM,
+            description="Pinecone upsert latency in seconds",
+            buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+        )
+        
+        # RAG Citation Metrics
+        self._register_metric(
+            name="rag_citation_count",
+            metric_type=MetricType.HISTOGRAM,
+            description="Number of citations returned per query by namespace",
+            buckets=[0, 1, 2, 3, 5, 10],
+        )
+        
+        self._register_metric(
+            name="rag_top_cosine_score",
+            metric_type=MetricType.GAUGE,
+            description="Top cosine similarity score from last retrieval by namespace",
+        )
+        
+        self._register_metric(
+            name="rag_result_count",
+            metric_type=MetricType.HISTOGRAM,
+            description="Number of results returned per query",
+            buckets=[0, 5, 10, 20, 30, 50],
+        )
+        
+        # Clinical Error Metrics
+        self._register_metric(
+            name="clinical_errors_total",
+            metric_type=MetricType.COUNTER,
+            description="Total clinical errors by type (pinecone_timeout, llm_error, ingestion_failure)",
+        )
+        
+        # Bayesian Diagnostic Metrics
+        self._register_metric(
+            name="bayesian_hypothesis_count",
+            metric_type=MetricType.HISTOGRAM,
+            description="Number of hypotheses in differential diagnosis",
+            buckets=[1, 3, 5, 10, 15, 20],
+        )
+        
+        self._register_metric(
+            name="bayesian_posterior_probability",
+            metric_type=MetricType.HISTOGRAM,
+            description="Posterior probability distribution for top diagnosis",
+            buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        )
+        
+        # FHIR Export Metrics
+        self._register_metric(
+            name="fhir_exports_total",
+            metric_type=MetricType.COUNTER,
+            description="Total FHIR bundle exports",
+        )
+        
+        self._register_metric(
+            name="fhir_export_latency_seconds",
+            metric_type=MetricType.HISTOGRAM,
+            description="FHIR bundle export latency",
+            buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0],
+        )
+        
+        # Antimicrobial Stewardship Metrics
+        self._register_metric(
+            name="antimicrobial_recommendations_total",
+            metric_type=MetricType.COUNTER,
+            description="Total antimicrobial recommendations generated",
+        )
+        
+        self._register_metric(
+            name="antimicrobial_ddi_warnings_total",
+            metric_type=MetricType.COUNTER,
+            description="Total DDI warnings in antimicrobial recommendations",
+        )
+        
+        self._register_metric(
+            name="antimicrobial_renal_adjustments_total",
+            metric_type=MetricType.COUNTER,
+            description="Total renal dose adjustments made",
+        )
+        
+        # Alert System Metrics
+        self._register_metric(
+            name="alerts_created_total",
+            metric_type=MetricType.COUNTER,
+            description="Total clinical alerts created by severity",
+        )
+        
+        self._register_metric(
+            name="alerts_overridden_total",
+            metric_type=MetricType.COUNTER,
+            description="Total clinical alerts overridden",
+        )
+        
         self._initialized = True
-        logger.info("[Metrics] Prometheus metrics registry initialized")
+        logger.info("[Metrics] Prometheus metrics registry initialized with P13 metrics")
     
     def _register_metric(
         self,

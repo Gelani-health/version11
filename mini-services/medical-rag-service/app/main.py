@@ -235,6 +235,18 @@ app.include_router(calculators_router)
 from app.api.fhir import router as fhir_router
 app.include_router(fhir_router)
 
+# PROMPT 13: Health Check Router (comprehensive with dependency probing)
+from app.api.health import router as health_router
+app.include_router(health_router)
+
+# PROMPT 13: Initialize OpenTelemetry
+from app.telemetry import init_telemetry
+tracer = init_telemetry(app, "medical-rag-service", "1.0.0")
+
+# PROMPT 13: Prometheus FastAPI Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
 
 # ===== Audit Logging Middleware =====
 

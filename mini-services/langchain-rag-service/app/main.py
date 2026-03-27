@@ -147,6 +147,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# PROMPT 13: Health Check Router
+from app.api.health import router as health_router
+app.include_router(health_router)
+
+# PROMPT 13: Initialize OpenTelemetry
+from app.telemetry import init_telemetry
+tracer = init_telemetry(app, "langchain-rag-proxy", "2.0.0")
+
+# PROMPT 13: Prometheus FastAPI Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
 
 # =============================================================================
 # AUTHENTICATION

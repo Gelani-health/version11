@@ -10,13 +10,14 @@
 | P1 | Cockcroft-Gault Renal Calculation | 1a53e5b | 33 |
 | P2 | Cephalosporin Cross-Reactivity | 59ff18d | 35 |
 | P3 | DDI Checking | ce95037 | 33 |
-| P4 | ECG QTc Formulas | feddb26 | 17 |
-| P5 | (Pending) | - | - |
+| P4/P5 | ECG QTc Formulas + QRS Range Fix | feddb26 | 18 |
 | P6 | Bayesian Priors Expansion | 342eca0 | 40 |
 | P7 | Clinical Calculators | ca9447b | 51 |
 | P8 | Antibiogram Database | aa9c113 | 28 |
 
-**Total Tests: 239 passed**
+**Total Tests: 257 passed**
+
+**Note: P4 and P5 are the same fix (ECG QTc + QRS Range), implemented together in commit feddb26.**
 
 ---
 

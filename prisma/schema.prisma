@@ -1209,29 +1209,37 @@ model NurseTask {
   @@map("nurse_tasks")
 }
 
-/// Immutable Audit Log
+/// Immutable Audit Log - PROMPT 11: Enhanced with outcome, retention, and metadata
+/// Reference: HIPAA requires 7-year retention (45 CFR § 164.312(b))
 model AuditLog {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   actorId         String
   actorName       String   
   actorRole       String   
   actorDepartment String?
-  actionType      String   
-  resourceType    String   
+  actionType      String   // CREATE, READ, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT, AI_QUERY, SIGN, AMEND
+  resourceType    String   // Patient, SoapNote, Diagnostic, User, AuditLog, Vitals, etc.
   resourceId      String?
-  patientMrn      String?
+  patientId       String?  // Direct patient ID reference (PROMPT 11)
+  patientMrn      String?  // Patient MRN for quick lookup
   fieldChanged    String?
   oldValue        String?
   newValue        String?
   ipAddress       String?
   userAgent       String?
-  timestamp       DateTime @default(now())
-  actor           Employee @relation(fields: [actorId], references: [employeeId])
+  outcome         String?  @default("SUCCESS") // SUCCESS, FAILURE, DENIED (PROMPT 11)
+  metadata        String?  // JSON metadata (PROMPT 11)
+  retainUntil     DateTime? // Retention date (7 years from creation) (PROMPT 11)
+  timestamp       DateTime  @default(now())
+  actor           Employee  @relation(fields: [actorId], references: [employeeId])
 
   @@index([actorId])
+  @@index([patientId])
   @@index([patientMrn])
   @@index([actionType])
   @@index([timestamp])
+  @@index([outcome])
+  @@index([retainUntil])
   @@map("audit_logs")
 }
 

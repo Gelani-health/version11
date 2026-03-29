@@ -17,6 +17,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:seed": "bunx tsx prisma/seed-patients.ts",
+    "db:seed:ai": "bunx tsx prisma/seed-ai-config.ts",
     "db:backup": "bunx tsx scripts/backup-service.ts backup",
     "db:backups": "bunx tsx scripts/backup-service.ts list",
     "db:restore": "bunx tsx scripts/backup-service.ts restore",

@@ -655,6 +655,7 @@ export const PUBLIC_ENDPOINTS = [
   '/api/ai-status',
   '/api/rag-config',        // RAG service configuration (read-only for demo)
   '/api/llm-integrations', // LLM integrations (read-only for demo)
+  '/api/initialize-ai-config', // AI config initialization endpoint
 ];
 
 /**

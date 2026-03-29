@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth-middleware";
+import { authenticateRequest, AuthenticatedUser } from "@/lib/auth-middleware";
+import { createAuditLog } from "@/lib/audit-service";
 
 // GET /api/lab-results - Get lab results with optional filters
 export async function GET(request: NextRequest) {
   // Authenticate the request
   const authResult = await authenticateRequest(request);
   
-  if (!authResult.authenticated) {
+  if (!authResult.authenticated || !authResult.user) {
     return NextResponse.json(
       { success: false, error: authResult.error || "Authentication required" },
       { status: authResult.statusCode || 401 }
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   // Check if user has permission to view lab results
   if (!user.permissions.includes('lab:read')) {
     return NextResponse.json(
-      { success: false, error: "You don't have permission to view lab results" },
+      { success: false, error: "Insufficient permissions: lab:read required" },
       { status: 403 }
     );
   }
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get("patientId");
     const consultationId = searchParams.get("consultationId");
     const category = searchParams.get("category");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     const where: Record<string, unknown> = {};
     
@@ -52,12 +53,27 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
-    // Audit log for PHI access
-    console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | GET /api/lab-results | Patient: ${patientId || 'all'}`);
+    // Create proper audit log
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'read',
+      resourceType: 'lab_result',
+      patientId: patientId || undefined,
+      metadata: { count: labResults.length, category },
+    });
+
+    // Log PHI access
+    await logPHIAccess(user, 'READ', 'lab_results', labResults.length, { patientId });
 
     return NextResponse.json({
       success: true,
       data: labResults,
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error fetching lab results:", error);
@@ -73,7 +89,7 @@ export async function POST(request: NextRequest) {
   // Authenticate the request
   const authResult = await authenticateRequest(request);
   
-  if (!authResult.authenticated) {
+  if (!authResult.authenticated || !authResult.user) {
     return NextResponse.json(
       { success: false, error: authResult.error || "Authentication required" },
       { status: authResult.statusCode || 401 }
@@ -86,7 +102,7 @@ export async function POST(request: NextRequest) {
   // Only lab workers and admins can enter results
   if (!user.permissions.includes('lab:result_entry')) {
     return NextResponse.json(
-      { success: false, error: "You don't have permission to enter lab results. This action is restricted to Lab Workers and Administrators." },
+      { success: false, error: "Insufficient permissions: lab:result_entry required (Lab Worker or Administrator)" },
       { status: 403 }
     );
   }
@@ -193,8 +209,25 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Audit log
-    console.log(`[AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Role: ${user.role} | POST /api/lab-results | Test: ${testName} | Result: ${resultValue} | Patient: ${patientId} | Critical: ${isCritical}`);
+    // Create proper audit log
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'create',
+      resourceType: 'lab_result',
+      resourceId: labResult.id,
+      patientId,
+      newValue: JSON.stringify({ testName, resultValue, interpretation: autoInterpretation }),
+    });
+
+    // Log PHI access
+    await logPHIAccess(user, 'CREATE', 'lab_result', labResult.id, { 
+      patientId, 
+      testName, 
+      resultValue,
+      isCritical
+    });
 
     // If critical value, log alert
     if (isCritical) {
@@ -206,12 +239,48 @@ export async function POST(request: NextRequest) {
       data: labResult,
       message: "Lab result created successfully",
       criticalAlert: isCritical,
-    });
+      meta: {
+        createdBy: user.employeeId,
+        createdAt: new Date().toISOString(),
+      },
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating lab result:", error);
     return NextResponse.json(
       { success: false, error: "Failed to create lab result" },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Log PHI access for HIPAA compliance
+ */
+async function logPHIAccess(
+  user: AuthenticatedUser,
+  action: string,
+  resource: string,
+  resourceId: string | number,
+  details?: unknown
+): Promise<void> {
+  try {
+    await db.aIInteraction.create({
+      data: {
+        interactionType: 'phi_access',
+        prompt: `${action} ${resource}`,
+        response: JSON.stringify({
+          resourceId,
+          details,
+          userRole: user.role,
+        }),
+        humanReviewed: false,
+        modelUsed: 'audit-system',
+        patientId: typeof resourceId === 'string' ? resourceId : null,
+      },
+    });
+
+    console.log(`[PHI AUDIT] ${new Date().toISOString()} | User: ${user.employeeId} | Action: ${action} | Resource: ${resource}:${resourceId}`);
+  } catch (error) {
+    console.error('Failed to log PHI access:', error);
   }
 }

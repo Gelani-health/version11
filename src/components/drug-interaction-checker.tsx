@@ -11,6 +11,7 @@ import {
   CheckCircle,
   Plus,
   X,
+  XCircle,
   Shield,
   Activity,
   Loader2,
@@ -77,7 +78,7 @@ interface PatientMedication {
 interface DrugInteraction {
   drug1: string;
   drug2: string;
-  severity: "major" | "moderate" | "minor";
+  severity: "contraindicated" | "major" | "moderate" | "minor";
   description: string;
   clinicalEffects: string[];
   management: string;
@@ -502,6 +503,106 @@ const drugInteractionDB: DrugInteraction[] = [
     management: "Avoid combination. If necessary, use with extreme caution and close monitoring.",
     references: ["FDA Prescribing Information"],
   },
+  // CRITICAL INTERACTIONS - Contraindicated combinations
+  {
+    drug1: "Simvastatin",
+    drug2: "Clarithromycin",
+    severity: "contraindicated",
+    description: "CONTRAINDICATED. High risk of rhabdomyolysis due to CYP3A4 inhibition.",
+    clinicalEffects: ["Rhabdomyolysis", "Acute kidney injury", "Death"],
+    management: "CONTRAINDICATED - Suspend simvastatin during clarithromycin treatment.",
+    references: ["FDA Drug Safety", "PMID: 11437544"],
+  },
+  {
+    drug1: "Simvastatin",
+    drug2: "Itraconazole",
+    severity: "contraindicated",
+    description: "CONTRAINDICATED. High risk of rhabdomyolysis.",
+    clinicalEffects: ["Rhabdomyolysis", "Muscle breakdown", "AKI"],
+    management: "CONTRAINDICATED - Do not co-administer.",
+    references: ["FDA Prescribing Information"],
+  },
+  {
+    drug1: "Methotrexate",
+    drug2: "Trimethoprim-Sulfamethoxazole",
+    severity: "contraindicated",
+    description: "CONTRAINDICATED. Risk of severe myelosuppression and death.",
+    clinicalEffects: ["Severe myelosuppression", "Mucositis", "Pancytopenia"],
+    management: "CONTRAINDICATED - Avoid combination.",
+    references: ["PMID: 3031225"],
+  },
+  {
+    drug1: "Morphine",
+    drug2: "Diazepam",
+    severity: "major",
+    description: "FDA Black Box Warning: Profound sedation, respiratory depression, death.",
+    clinicalEffects: ["Profound sedation", "Respiratory depression", "Death"],
+    management: "FDA Black Box Warning - Avoid if possible. Use lowest doses with close monitoring.",
+    references: ["PMID: 28379233"],
+  },
+  {
+    drug1: "Oxycodone",
+    drug2: "Alprazolam",
+    severity: "major",
+    description: "FDA Black Box Warning: Concomitant use increases risk of death.",
+    clinicalEffects: ["Profound sedation", "Respiratory depression", "Death"],
+    management: "FDA Black Box Warning - Avoid if possible.",
+    references: ["PMID: 28379233"],
+  },
+  {
+    drug1: "Lithium",
+    drug2: "Ibuprofen",
+    severity: "major",
+    description: "NSAIDs reduce lithium clearance, increasing toxicity risk.",
+    clinicalEffects: ["Lithium toxicity", "Tremor", "Confusion", "Seizures"],
+    management: "Monitor lithium levels closely; consider dose reduction.",
+    references: ["PMID: 8566294"],
+  },
+  {
+    drug1: "Lithium",
+    drug2: "Lisinopril",
+    severity: "major",
+    description: "ACE inhibitors reduce lithium clearance.",
+    clinicalEffects: ["Lithium toxicity"],
+    management: "Reduce lithium dose; monitor levels frequently.",
+    references: ["PMID: 8566294"],
+  },
+  {
+    drug1: "Digoxin",
+    drug2: "Amiodarone",
+    severity: "major",
+    description: "Amiodarone increases digoxin levels by 50-100%.",
+    clinicalEffects: ["Digoxin toxicity", "Nausea", "Visual changes", "Arrhythmias"],
+    management: "Reduce digoxin dose by 50%; monitor levels.",
+    references: ["PMID: 6605085"],
+  },
+  {
+    drug1: "Warfarin",
+    drug2: "Amiodarone",
+    severity: "major",
+    description: "Amiodarone inhibits warfarin metabolism, significantly increasing INR.",
+    clinicalEffects: ["Markedly increased INR", "Severe bleeding"],
+    management: "Reduce warfarin dose by 30-50%. Monitor INR twice weekly.",
+    references: ["PMID: 15574368"],
+  },
+  {
+    drug1: "Warfarin",
+    drug2: "Fluconazole",
+    severity: "major",
+    description: "Fluconazole significantly increases warfarin levels.",
+    clinicalEffects: ["Increased INR", "Bleeding risk"],
+    management: "Reduce warfarin dose by 50%. Monitor INR.",
+    references: ["PMID: 8566294"],
+  },
+  {
+    drug1: "Lisinopril",
+    drug2: "Spironolactone",
+    severity: "major",
+    description: "Risk of hyperkalemia with ACE inhibitor and potassium-sparing diuretic.",
+    clinicalEffects: ["Hyperkalemia", "Arrhythmias"],
+    management: "Monitor potassium frequently.",
+    references: ["Clinical Pharmacology"],
+  },
   {
     drug1: "Carbamazepine",
     drug2: "Warfarin",
@@ -692,6 +793,12 @@ export function DrugInteractionChecker() {
 
   const getSeverityStyles = (severity: string) => {
     switch (severity) {
+      case "contraindicated":
+        return {
+          badge: "bg-red-200 text-red-900 border-red-300",
+          bg: "bg-red-100 border-red-300",
+          icon: <XCircle className="h-5 w-5 text-red-600" />,
+        };
       case "major":
         return {
           badge: "bg-red-100 text-red-700 border-red-200",
@@ -704,11 +811,17 @@ export function DrugInteractionChecker() {
           bg: "bg-amber-50 border-amber-200",
           icon: <AlertCircle className="h-5 w-5 text-amber-500" />,
         };
-      default:
+      case "minor":
         return {
           badge: "bg-blue-100 text-blue-700 border-blue-200",
           bg: "bg-blue-50 border-blue-200",
           icon: <Info className="h-5 w-5 text-blue-500" />,
+        };
+      default:
+        return {
+          badge: "bg-slate-100 text-slate-700 border-slate-200",
+          bg: "bg-slate-50 border-slate-200",
+          icon: <Info className="h-5 w-5 text-slate-500" />,
         };
     }
   };

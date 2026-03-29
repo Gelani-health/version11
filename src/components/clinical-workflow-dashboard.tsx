@@ -608,14 +608,53 @@ export function ClinicalWorkflowDashboard({
   // Prepare patient data for SOAP template
   const getPatientDataForSOAP = () => {
     if (!selectedPatient) return undefined;
+    
+    // Safely parse allergies
+    let allergies: string[] = [];
+    try {
+      if (selectedPatient.allergies) {
+        const parsed = JSON.parse(selectedPatient.allergies);
+        allergies = Array.isArray(parsed) 
+          ? parsed.map((a: any) => (typeof a === 'string' ? a : (a?.name || String(a)))).filter(Boolean)
+          : [];
+      }
+    } catch {
+      allergies = selectedPatient.allergies 
+        ? selectedPatient.allergies.split(',').map(a => a.trim()).filter(Boolean) 
+        : [];
+    }
+    
+    // Safely parse chronic conditions
+    let chronicConditions: string[] = [];
+    try {
+      if (selectedPatient.chronicConditions) {
+        const parsed = JSON.parse(selectedPatient.chronicConditions);
+        chronicConditions = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      }
+    } catch {
+      chronicConditions = selectedPatient.chronicConditions 
+        ? selectedPatient.chronicConditions.split(',').map(c => c.trim()).filter(Boolean) 
+        : [];
+    }
+    
+    // Calculate age safely
+    let age = 'Unknown';
+    if (selectedPatient.dateOfBirth) {
+      const dob = new Date(selectedPatient.dateOfBirth);
+      if (!isNaN(dob.getTime())) {
+        const ageYears = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        age = isNaN(ageYears) ? 'Unknown' : `${ageYears} years`;
+      }
+    }
+    
     return {
-      name: `${selectedPatient.firstName} ${selectedPatient.lastName}`,
-      dob: new Date(selectedPatient.dateOfBirth).toLocaleDateString(),
-      mrn: selectedPatient.mrn,
-      gender: selectedPatient.gender,
-      allergies: selectedPatient.allergies ? JSON.parse(selectedPatient.allergies).map((a: any) => a.name || a) : [],
+      name: `${selectedPatient.firstName || 'Unknown'} ${selectedPatient.lastName || ''}`.trim(),
+      dob: selectedPatient.dateOfBirth ? new Date(selectedPatient.dateOfBirth).toLocaleDateString() : 'Unknown',
+      mrn: selectedPatient.mrn || 'N/A',
+      gender: selectedPatient.gender || 'Unknown',
+      allergies,
       activeMedications: [],
-      chronicConditions: selectedPatient.chronicConditions ? JSON.parse(selectedPatient.chronicConditions) : [],
+      chronicConditions,
       recentVitals: currentVitals,
     };
   };

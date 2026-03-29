@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
+import { encryptApiKey, decryptApiKey, isEncrypted } from "@/lib/encryption";
 
 // Helper function to mask API key (show only last 4 characters)
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
-  if (apiKey.length <= 4) return "••••";
-  return "••••" + apiKey.slice(-4);
+  // Decrypt first if encrypted
+  const decryptedKey = isEncrypted(apiKey) ? decryptApiKey(apiKey) : apiKey;
+  if (!decryptedKey || decryptedKey.length <= 4) return "••••";
+  return "••••" + decryptedKey.slice(-4);
 }
 
 // Helper function to prepare integration response with masked sensitive data
@@ -147,7 +150,20 @@ export const PUT = withAuth(async (
     if (updateData.baseUrl !== undefined) data.baseUrl = updateData.baseUrl;
     if (updateData.username !== undefined) data.username = updateData.username;
     if (updateData.password !== undefined) data.password = updateData.password;
-    if (updateData.apiKey !== undefined) data.apiKey = updateData.apiKey;
+
+    // Encrypt API key if provided and different from existing
+    if (updateData.apiKey !== undefined) {
+      // If apiKey is masked (starts with ••••), keep existing
+      if (typeof updateData.apiKey === 'string' && updateData.apiKey.startsWith('••••')) {
+        // Keep existing encrypted key
+      } else if (updateData.apiKey) {
+        // Encrypt new API key
+        data.apiKey = encryptApiKey(updateData.apiKey);
+      } else {
+        data.apiKey = null;
+      }
+    }
+
     if (updateData.model !== undefined) data.model = updateData.model;
     if (updateData.isActive !== undefined) data.isActive = updateData.isActive;
     if (updateData.isDefault !== undefined) data.isDefault = updateData.isDefault;
@@ -308,7 +324,20 @@ export const PATCH = withAuth(async (
     if (updateData.baseUrl !== undefined) data.baseUrl = updateData.baseUrl;
     if (updateData.username !== undefined) data.username = updateData.username;
     if (updateData.password !== undefined) data.password = updateData.password;
-    if (updateData.apiKey !== undefined) data.apiKey = updateData.apiKey;
+
+    // Encrypt API key if provided and different from existing
+    if (updateData.apiKey !== undefined) {
+      // If apiKey is masked (starts with ••••), keep existing
+      if (typeof updateData.apiKey === 'string' && updateData.apiKey.startsWith('••••')) {
+        // Keep existing encrypted key
+      } else if (updateData.apiKey) {
+        // Encrypt new API key
+        data.apiKey = encryptApiKey(updateData.apiKey);
+      } else {
+        data.apiKey = null;
+      }
+    }
+
     if (updateData.model !== undefined) data.model = updateData.model;
     if (updateData.isActive !== undefined) data.isActive = updateData.isActive;
     if (updateData.isDefault !== undefined) data.isDefault = updateData.isDefault;

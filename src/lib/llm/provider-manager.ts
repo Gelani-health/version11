@@ -3,6 +3,22 @@ import { db } from "@/lib/db";
 import { decryptApiKey, isEncrypted } from "@/lib/encryption";
 import ZAI from "z-ai-web-dev-sdk";
 
+// ============================================================================
+// Configuration Constants
+// ============================================================================
+
+/** Default timeout for LLM API requests (30 seconds) */
+const LLM_TIMEOUT_MS = 30000;
+
+/** Maximum retries for failed requests */
+const MAX_RETRIES = 2;
+
+/** Delay between retries (exponential backoff base) */
+const RETRY_DELAY_BASE_MS = 1000;
+
+/** Maximum content length for AI responses (sanitization) */
+const MAX_RESPONSE_LENGTH = 50000;
+
 // Provider configuration interface
 export interface LLMProviderConfig {
   id: string;
@@ -27,7 +43,7 @@ export interface LLMProviderConfig {
 // Decrypt API key helper
 function getDecryptedApiKey(encryptedKey: string | null): string | null {
   if (!encryptedKey) return null;
-  
+
   // Check if encrypted, if so decrypt
   if (isEncrypted(encryptedKey)) {
     try {
@@ -37,9 +53,110 @@ function getDecryptedApiKey(encryptedKey: string | null): string | null {
       return null;
     }
   }
-  
+
   // Legacy unencrypted key
   return encryptedKey;
+}
+
+// ============================================================================
+// Response Validation & Sanitization
+// ============================================================================
+
+/**
+ * Validates and sanitizes AI response content
+ * - Truncates excessively long responses
+ * - Removes potential injection patterns
+ * - Ensures safe content for medical context
+ */
+function validateAndSanitizeResponse(content: string): string {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  // Truncate if too long
+  let sanitized = content.length > MAX_RESPONSE_LENGTH
+    ? content.substring(0, MAX_RESPONSE_LENGTH) + '... [truncated]'
+    : content;
+
+  // Remove potential script injection patterns (basic sanitization)
+  sanitized = sanitized
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, 'data-blocked=');
+
+  return sanitized.trim();
+}
+
+/**
+ * Sleep utility for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Creates an AbortController with timeout
+ */
+function createTimeoutController(timeoutMs: number = LLM_TIMEOUT_MS): {
+  controller: AbortController;
+  timeoutId: NodeJS.Timeout;
+} {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return { controller, timeoutId };
+}
+
+/**
+ * Wraps fetch with timeout and retry logic
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries: number = MAX_RETRIES
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const { controller, timeoutId } = createTimeoutController();
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      const isAbortError = error instanceof Error && error.name === 'AbortError';
+      const isNetworkError = error instanceof Error && (
+        error.message.includes('fetch failed') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('ENOTFOUND')
+      );
+
+      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+
+      // Don't retry on abort (timeout) after last attempt
+      if (isAbortError && attempt === retries) {
+        throw new Error(`Request timed out after ${LLM_TIMEOUT_MS / 1000} seconds`);
+      }
+
+      // Retry on network errors or timeouts (except last attempt)
+      if ((isNetworkError || isAbortError) && attempt < retries) {
+        const delay = RETRY_DELAY_BASE_MS * Math.pow(2, attempt);
+        console.warn(`[ProviderManager] Retry ${attempt + 1}/${retries} after ${delay}ms: ${lastError.message}`);
+        await sleep(delay);
+        continue;
+      }
+
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error('Max retries exceeded');
 }
 
 // Get all active LLM integrations
@@ -221,20 +338,28 @@ export async function routeLLMRequest(
 
     if (!provider) {
       // No configured provider - use Z.ai SDK directly (fallback)
-      const zai = await ZAI.create();
-      const completion = await zai.chat.completions.create({
-        messages: options.messages as Array<{ role: "assistant" | "user" | "system"; content: string }>,
-        thinking: options.thinking || { type: "disabled" },
-      });
+      try {
+        const zai = await ZAI.create();
+        const completion = await zai.chat.completions.create({
+          messages: options.messages as Array<{ role: "assistant" | "user" | "system"; content: string }>,
+          thinking: options.thinking || { type: "disabled" },
+        });
 
-      const content = completion.choices[0]?.message?.content || "";
+        const content = validateAndSanitizeResponse(completion.choices[0]?.message?.content || "");
 
-      return {
-        success: true,
-        content,
-        provider: "zai",
-        model: "default",
-      };
+        return {
+          success: true,
+          content,
+          provider: "zai",
+          model: "default",
+        };
+      } catch (sdkError) {
+        console.error("[ProviderManager] Z.ai SDK fallback failed:", sdkError);
+        return {
+          success: false,
+          error: "No LLM provider configured and SDK fallback failed. Please configure an LLM integration.",
+        };
+      }
     }
 
     // Route based on provider type
@@ -242,7 +367,7 @@ export async function routeLLMRequest(
       if (provider.provider === "zai") {
         // Use direct HTTP call to Z.ai Platform (GLM-4.7-Flash)
         const baseUrl = provider.baseUrl || "https://api.z.ai/api/paas/v4";
-        const response = await fetch(`${baseUrl}/chat/completions`, {
+        const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -262,7 +387,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || "";
+        const content = validateAndSanitizeResponse(data.choices?.[0]?.message?.content || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -277,7 +402,7 @@ export async function routeLLMRequest(
       if (provider.provider === "openai") {
         // OpenAI API call
         const baseUrl = provider.baseUrl || "https://api.openai.com/v1";
-        const response = await fetch(`${baseUrl}/chat/completions`, {
+        const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -297,7 +422,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || "";
+        const content = validateAndSanitizeResponse(data.choices?.[0]?.message?.content || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -312,7 +437,7 @@ export async function routeLLMRequest(
       if (provider.provider === "gemini") {
         // Google Gemini API call
         const baseUrl = provider.baseUrl || "https://generativelanguage.googleapis.com/v1";
-        const response = await fetch(`${baseUrl}/models/${provider.model}:generateContent?key=${provider.apiKey}`, {
+        const response = await fetchWithRetry(`${baseUrl}/models/${provider.model}:generateContent?key=${provider.apiKey}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -334,7 +459,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const content = validateAndSanitizeResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -349,7 +474,7 @@ export async function routeLLMRequest(
       if (provider.provider === "claude") {
         // Anthropic Claude API call
         const baseUrl = provider.baseUrl || "https://api.anthropic.com/v1";
-        const response = await fetch(`${baseUrl}/messages`, {
+        const response = await fetchWithRetry(`${baseUrl}/messages`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -372,7 +497,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.content?.[0]?.text || "";
+        const content = validateAndSanitizeResponse(data.content?.[0]?.text || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -385,9 +510,9 @@ export async function routeLLMRequest(
       }
 
       if (provider.provider === "ollama") {
-        // Ollama API call (local)
+        // Ollama API call (local) - use shorter timeout for local
         const baseUrl = provider.baseUrl || "http://localhost:11434";
-        const response = await fetch(`${baseUrl}/api/chat`, {
+        const response = await fetchWithRetry(`${baseUrl}/api/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -408,7 +533,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.message?.content || "";
+        const content = validateAndSanitizeResponse(data.message?.content || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -422,7 +547,7 @@ export async function routeLLMRequest(
 
       // For 'other' providers, try a generic API call
       if (provider.provider === "other" && provider.baseUrl) {
-        const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+        const response = await fetchWithRetry(`${provider.baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -444,7 +569,7 @@ export async function routeLLMRequest(
         }
 
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || "";
+        const content = validateAndSanitizeResponse(data.choices?.[0]?.message?.content || "");
         await updateProviderSuccess(provider.id);
 
         return {
@@ -457,22 +582,27 @@ export async function routeLLMRequest(
       }
 
       // Default fallback to Z.ai SDK
-      const zai = await ZAI.create();
-      const completion = await zai.chat.completions.create({
-        messages: options.messages as Array<{ role: "assistant" | "user" | "system"; content: string }>,
-        thinking: options.thinking || { type: "disabled" },
-      });
+      try {
+        const zai = await ZAI.create();
+        const completion = await zai.chat.completions.create({
+          messages: options.messages as Array<{ role: "assistant" | "user" | "system"; content: string }>,
+          thinking: options.thinking || { type: "disabled" },
+        });
 
-      const content = completion.choices[0]?.message?.content || "";
-      await updateProviderSuccess(provider.id);
+        const content = validateAndSanitizeResponse(completion.choices[0]?.message?.content || "");
+        await updateProviderSuccess(provider.id);
 
-      return {
-        success: true,
-        content,
-        provider: provider.provider,
-        model: provider.model,
-        providerId: provider.id,
-      };
+        return {
+          success: true,
+          content,
+          provider: provider.provider,
+          model: provider.model,
+          providerId: provider.id,
+        };
+      } catch (sdkError) {
+        console.error("[ProviderManager] SDK fallback failed:", sdkError);
+        throw new Error(`LLM request failed: ${sdkError instanceof Error ? sdkError.message : 'Unknown SDK error'}`);
+      }
     } catch (providerError) {
       const errorMessage = providerError instanceof Error ? providerError.message : "Unknown error";
       await updateProviderError(provider.id, errorMessage);

@@ -14,6 +14,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 import { createAuditLog } from "@/lib/audit-service";
+import { decryptApiKey, isEncrypted } from "@/lib/encryption";
+import { routeLLMRequest } from "@/lib/llm/provider-manager";
+
+// Default timeout for LLM API requests (30 seconds)
+const LLM_TIMEOUT_MS = 30000;
 
 interface DiagnosisSuggestion {
   condition: string;
@@ -34,6 +39,21 @@ interface ClinicalResponse {
   }[];
 }
 
+/**
+ * Helper to get decrypted API key
+ */
+function getDecryptedApiKey(encryptedKey: string | null): string | null {
+  if (!encryptedKey) return null;
+  if (isEncrypted(encryptedKey)) {
+    try {
+      return decryptApiKey(encryptedKey);
+    } catch {
+      return null;
+    }
+  }
+  return encryptedKey;
+}
+
 async function getLLMConfig() {
   const defaultIntegration = await db.lLMIntegration.findFirst({
     where: { isActive: true, isDefault: true },
@@ -45,9 +65,10 @@ async function getLLMConfig() {
   
   return {
     baseUrl: defaultIntegration.baseUrl || "https://api.z.ai/api/paas/v4",
-    apiKey: defaultIntegration.apiKey,
+    apiKey: getDecryptedApiKey(defaultIntegration.apiKey),
     model: defaultIntegration.model || "GLM-4.7-Flash",
     displayName: defaultIntegration.displayName,
+    id: defaultIntegration.id,
   };
 }
 
@@ -97,54 +118,104 @@ export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUse
     const body = await request.json();
     const { query, patientContext, type } = body;
 
+    // Validate input
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, error: "A valid clinical query is required" },
+        { status: 400 }
+      );
+    }
+
+    // Limit query length to prevent abuse
+    const sanitizedQuery = query.trim().slice(0, 5000);
+
     // Get LLM configuration from database
     const llmConfig = await getLLMConfig();
 
-    // Build clinical context
+    // Build clinical context with safety warnings
     const systemPrompt = `You are an AI Clinical Decision Support assistant integrated with Bahmni HIS. 
 Your role is to provide evidence-based clinical suggestions to healthcare professionals.
 
+CRITICAL SAFETY PROTOCOLS:
+⚠️ ALWAYS START YOUR RESPONSE WITH A CLINICAL SAFETY DISCLAIMER
+⚠️ Never make definitive diagnoses - always suggest further evaluation
+⚠️ For emergency presentations (chest pain, stroke symptoms, severe distress), prioritize immediate actions
+⚠️ Consider patient allergies and contraindications before suggesting treatments
+⚠️ If patient context suggests a life-threatening condition, clearly state urgency
+
 IMPORTANT GUIDELINES:
-1. Always emphasize that all suggestions require clinical verification
+1. Always emphasize that all suggestions require clinical verification by a qualified healthcare professional
 2. Provide differential diagnoses with ICD-10 codes when appropriate
-3. Consider patient safety first
+3. Consider patient safety first - flag drug allergies, contraindications, and critical findings
 4. Cite clinical guidelines or evidence when possible
-5. Be clear about confidence levels
-6. Never make definitive diagnoses - always suggest further evaluation
+5. Be clear about confidence levels and uncertainty
+6. Include recommended diagnostic tests when appropriate
+7. For medication recommendations, check for potential interactions with patient's current medications
 
-Respond in a structured format with:
-- A clear summary of your analysis
-- Differential diagnoses with ICD-10 codes and confidence levels (0-1)
-- Recommended next steps
-- Any drug interaction alerts if medications are mentioned`;
+RESPONSE FORMAT:
+1. **Clinical Safety Notice** (required)
+2. **Summary Assessment** with confidence level
+3. **Differential Diagnoses** with ICD-10 codes and probability estimates
+4. **Recommended Actions** prioritized by urgency
+5. **Drug Interaction Alerts** if applicable
+6. **Follow-up Recommendations**`;
 
-    const userPrompt = `Clinical Query: ${query}
+    // Build patient context section safely
+    let patientContextSection = '';
+    if (patientContext && typeof patientContext === 'object') {
+      patientContextSection = `Patient Context:
+- Name: ${patientContext.name || 'Not provided'}
+- MRN: ${patientContext.mrn || 'Not provided'}
+- Age/Gender: ${patientContext.age || 'Unknown'} / ${patientContext.gender || 'Unknown'}
+- Allergies: ${Array.isArray(patientContext.allergies) && patientContext.allergies.length > 0 
+    ? patientContext.allergies.join(', ') 
+    : 'None reported'}
+- Current Medications: ${Array.isArray(patientContext.medications) && patientContext.medications.length > 0 
+    ? patientContext.medications.map((m: any) => m.name || m).join(', ') 
+    : 'None reported'}`;
+    }
 
-${patientContext ? `Patient Context: ${JSON.stringify(patientContext)}` : ""}
+    const userPrompt = `Clinical Query: ${sanitizedQuery}
 
-Please provide clinical decision support for this case. Include differential diagnoses with ICD-10 codes.`;
+${patientContextSection}
 
-    // Call LLM API directly
+Please provide clinical decision support for this case. Include differential diagnoses with ICD-10 codes and probability estimates.`;
+
+    // Call LLM API directly with timeout
     // Note: Thinking mode ENABLED for clinical decision support
     // This provides transparency and reasoning that doctors can verify
-    const response = await fetch(`${llmConfig.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${llmConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: llmConfig.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 2000,
-        // Thinking mode enabled for medical transparency
-        // Doctors can see the reasoning process and verify conclusions
-        thinking: { type: "enabled" },
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await fetch(`${llmConfig.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${llmConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: llmConfig.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 2000,
+          // Thinking mode enabled for medical transparency
+          // Doctors can see the reasoning process and verify conclusions
+          thinking: { type: "enabled" },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        throw new Error(`LLM request timed out after ${LLM_TIMEOUT_MS / 1000} seconds`);
+      }
+      throw fetchError;
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -170,14 +241,21 @@ Please provide clinical decision support for this case. Include differential dia
 
     // Extract diagnosis suggestions from the response
     // In production, this would be more sophisticated parsing
-    if (query.toLowerCase().includes("chest pain")) {
+    if (sanitizedQuery.toLowerCase().includes("chest pain")) {
       responseData.diagnosisSuggestions = [
         {
           condition: "Acute Coronary Syndrome",
           icdCode: "I21.9",
           confidence: 0.78,
-          reasoning: "Chest pain with associated symptoms increases suspicion for ACS. ECG and troponin recommended.",
+          reasoning: "Chest pain with associated symptoms increases suspicion for ACS. ECG and troponin recommended. ⚠️ This is a potential emergency - consider immediate evaluation.",
           symptoms: ["Chest pain", "Arm pain", "Diaphoresis"],
+        },
+        {
+          condition: "Pulmonary Embolism",
+          icdCode: "I26.9",
+          confidence: 0.45,
+          reasoning: "Chest pain with dyspnea may indicate PE. Consider Wells score and D-dimer. ⚠️ Can be life-threatening.",
+          symptoms: ["Chest pain", "Dyspnea", "Leg swelling"],
         },
         {
           condition: "Gastroesophageal Reflux Disease",
@@ -194,6 +272,14 @@ Please provide clinical decision support for this case. Include differential dia
           symptoms: ["Chest wall tenderness", "Pain with movement"],
         },
       ];
+      
+      // Add clinical safety alert for chest pain
+      responseData.drugAlerts = [{
+        drug: "Clinical Alert",
+        severity: "high",
+        interaction: "Chest pain evaluation requires urgent assessment",
+        recommendation: "Obtain 12-lead ECG within 10 minutes, consider troponin, aspirin if indicated",
+      }];
     }
 
     // Update usage stats
@@ -214,7 +300,7 @@ Please provide clinical decision support for this case. Include differential dia
       resourceType: 'soap_note',
       newValue: JSON.stringify({
         queryType: type || 'clinical-support',
-        queryLength: query?.length || 0,
+        queryLength: sanitizedQuery.length,
         hasPatientContext: !!patientContext,
         model: llmConfig.displayName || llmConfig.model,
       }),

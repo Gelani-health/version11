@@ -228,23 +228,26 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
     }
   };
 
-  const getSelectedPatient = () => {
+  const getSelectedPatient = (): Patient | undefined => {
+    if (!selectedPatientId) return undefined;
     return patients.find((p) => p.id === selectedPatientId);
   };
 
-  const parseAllergies = (allergies?: string): string[] => {
-    if (!allergies) return [];
+  const parseAllergies = (allergies?: string | null): string[] => {
+    if (!allergies || allergies.trim() === '') return [];
     try {
-      return JSON.parse(allergies);
+      const parsed = JSON.parse(allergies);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
     } catch {
       return allergies.split(',').map(a => a.trim()).filter(Boolean);
     }
   };
 
-  const parseConditions = (conditions?: string): string[] => {
-    if (!conditions) return [];
+  const parseConditions = (conditions?: string | null): string[] => {
+    if (!conditions || conditions.trim() === '') return [];
     try {
-      return JSON.parse(conditions);
+      const parsed = JSON.parse(conditions);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
     } catch {
       return conditions.split(',').map(c => c.trim()).filter(Boolean);
     }
@@ -475,26 +478,30 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
                     <div className="flex items-start gap-4">
                       <Avatar className="h-12 w-12">
                         <AvatarFallback className="bg-blue-100 text-blue-700 text-lg">
-                          {selectedPatient.firstName[0]}{selectedPatient.lastName[0]}
+                          {(selectedPatient.firstName?.[0] || '?')}{(selectedPatient.lastName?.[0] || '?')}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <p className="font-semibold text-lg">{selectedPatient.firstName} {selectedPatient.lastName}</p>
-                          <p className="text-sm text-slate-600">MRN: {selectedPatient.mrn}</p>
+                          <p className="font-semibold text-lg">{selectedPatient.firstName || 'Unknown'} {selectedPatient.lastName || ''}</p>
+                          <p className="text-sm text-slate-600">MRN: {selectedPatient.mrn || 'N/A'}</p>
                           <p className="text-sm text-slate-600">
-                            {Math.floor((Date.now() - new Date(selectedPatient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} y/o {selectedPatient.gender}
+                            {(() => {
+                              if (!selectedPatient.dateOfBirth) return 'Age unknown';
+                              const age = Math.floor((Date.now() - new Date(selectedPatient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+                              return isNaN(age) ? 'Age unknown' : `${age} y/o`;
+                            })()} {selectedPatient.gender || ''}
                           </p>
                         </div>
                         
-                        {patientAllergies.length > 0 && (
+                        {Array.isArray(patientAllergies) && patientAllergies.length > 0 && (
                           <div>
                             <p className="text-sm font-medium text-red-700 flex items-center gap-1">
                               <AlertTriangle className="h-4 w-4" />
-                              Allergies ({patientAllergies.length})
+                              Allergie{patientAllergies.length !== 1 ? 's' : ''} ({patientAllergies.length})
                             </p>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {patientAllergies.slice(0, 3).map((a, i) => (
+                              {patientAllergies.filter(Boolean).slice(0, 3).map((a, i) => (
                                 <Badge key={i} variant="outline" className="bg-red-50 border-red-200 text-red-700 text-xs">
                                   {a}
                                 </Badge>
@@ -506,14 +513,14 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
                           </div>
                         )}
 
-                        {patientConditions.length > 0 && (
+                        {Array.isArray(patientConditions) && patientConditions.length > 0 && (
                           <div>
                             <p className="text-sm font-medium text-slate-700 flex items-center gap-1">
                               <Heart className="h-4 w-4" />
-                              Conditions ({patientConditions.length})
+                              Condition{patientConditions.length !== 1 ? 's' : ''} ({patientConditions.length})
                             </p>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {patientConditions.slice(0, 3).map((c, i) => (
+                              {patientConditions.filter(Boolean).slice(0, 3).map((c, i) => (
                                 <Badge key={i} variant="outline" className="text-xs">
                                   {c}
                                 </Badge>
@@ -564,7 +571,7 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
                     Clinical Consultation
                     {selectedPatient && (
                       <Badge variant="outline" className="ml-2 bg-blue-50 border-blue-200 text-blue-700">
-                        {selectedPatient.firstName} {selectedPatient.lastName[0]}.
+                        {selectedPatient.firstName || 'Unknown'} {(selectedPatient.lastName?.[0] || '?')}.
                       </Badge>
                     )}
                   </CardTitle>

@@ -180,16 +180,19 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
     }
   };
 
-  const getSelectedPatient = () => {
+  const getSelectedPatient = (): Patient | undefined => {
+    if (!selectedPatientId) return undefined;
     return patients.find((p) => p.id === selectedPatientId);
   };
 
-  const parseAllergies = (allergies?: string): string[] => {
-    if (!allergies) return [];
+  const parseAllergies = (allergies?: string | null): string[] => {
+    if (!allergies || allergies.trim() === '') return [];
     try {
-      return JSON.parse(allergies);
+      const parsed = JSON.parse(allergies);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
     } catch {
-      return [];
+      // Fallback: try splitting by comma
+      return allergies.split(',').map(a => a.trim()).filter(Boolean);
     }
   };
 
@@ -375,18 +378,25 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
     };
   };
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.7) return "text-emerald-600 bg-emerald-50";
-    if (confidence >= 0.5) return "text-amber-600 bg-amber-50";
+  const getConfidenceColor = (confidence: number): string => {
+    // Ensure confidence is a valid number between 0 and 1
+    const validConfidence = typeof confidence === 'number' && !isNaN(confidence) 
+      ? Math.max(0, Math.min(1, confidence)) 
+      : 0;
+    if (validConfidence >= 0.7) return "text-emerald-600 bg-emerald-50";
+    if (validConfidence >= 0.5) return "text-amber-600 bg-amber-50";
     return "text-slate-600 bg-slate-50";
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
+  const getSeverityColor = (severity: string): string => {
+    // Validate severity input
+    const validSeverity = typeof severity === 'string' ? severity.toLowerCase() : 'low';
+    switch (validSeverity) {
       case "high":
         return "text-red-600 bg-red-50 border-red-200";
       case "medium":
         return "text-amber-600 bg-amber-50 border-amber-200";
+      case "low":
       default:
         return "text-blue-600 bg-blue-50 border-blue-200";
     }
@@ -500,17 +510,17 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
               <div className="flex items-center gap-4 flex-1">
                 <Avatar className="h-10 w-10">
                   <AvatarFallback className="bg-purple-100 text-purple-700">
-                    {selectedPatient.firstName[0]}{selectedPatient.lastName[0]}
+                    {(selectedPatient.firstName?.[0] || '?')}{(selectedPatient.lastName?.[0] || '?')}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
                   <p className="font-medium">{selectedPatient.firstName} {selectedPatient.lastName}</p>
                   <p className="text-sm text-slate-500">{selectedPatient.mrn} • {selectedPatient.gender} • DOB: {new Date(selectedPatient.dateOfBirth).toLocaleDateString()}</p>
                 </div>
-                {patientAllergies.length > 0 && (
+                {Array.isArray(patientAllergies) && patientAllergies.length > 0 && (
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-red-500" />
-                    <span className="text-sm text-red-600">{patientAllergies.length} Allergies</span>
+                    <span className="text-sm text-red-600">{patientAllergies.length} Allergie{patientAllergies.length !== 1 ? 's' : ''}</span>
                   </div>
                 )}
               </div>
@@ -520,11 +530,11 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
           {/* Patient Context Summary */}
           {selectedPatient && (
             <div className="mt-4 grid sm:grid-cols-2 gap-4">
-              {patientAllergies.length > 0 && (
+              {Array.isArray(patientAllergies) && patientAllergies.length > 0 && (
                 <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                  <p className="text-sm font-medium text-red-800 mb-2">Allergies:</p>
+                  <p className="text-sm font-medium text-red-800 mb-2">Allergie{patientAllergies.length !== 1 ? 's' : ''}:</p>
                   <div className="flex flex-wrap gap-2">
-                    {patientAllergies.map((allergy, i) => (
+                    {patientAllergies.filter(Boolean).map((allergy, i) => (
                       <Badge key={i} variant="outline" className="bg-white border-red-300 text-red-700">
                         {allergy}
                       </Badge>
@@ -543,7 +553,7 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
                   <div className="flex flex-wrap gap-2">
                     {patientMedications.slice(0, 5).map((med, i) => (
                       <Badge key={i} variant="outline" className="bg-white border-blue-300 text-blue-700">
-                        {med.medicationName} {med.dosage}
+                        {med.medicationName || 'Unknown'} {med.dosage || ''}
                       </Badge>
                     ))}
                     {patientMedications.length > 5 && (
@@ -583,7 +593,7 @@ export function ClinicalDecisionSupport({ preselectedPatientId }: ClinicalDecisi
                 Clinical AI Chat
                 {selectedPatient && (
                   <Badge variant="outline" className="ml-2 bg-purple-50 border-purple-200 text-purple-700">
-                    {selectedPatient.firstName} {selectedPatient.lastName[0]}.
+                    {selectedPatient.firstName || 'Unknown'} {(selectedPatient.lastName?.[0] || '?')}.
                   </Badge>
                 )}
               </CardTitle>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
-import { authenticateRequest } from '@/lib/auth-middleware';
+import { authenticateRequest, AuthenticatedUser } from '@/lib/auth-middleware';
+import { createAuditLog } from '@/lib/audit-service';
+import { db } from '@/lib/db';
 
 // Common lab tests with reference ranges for suggestions
 const commonLabTests = [
@@ -54,12 +56,12 @@ const commonLabTests = [
 export async function GET(request: NextRequest) {
   // Authentication check
   const authResult = await authenticateRequest(request);
-  if (!authResult.authenticated) {
+  if (!authResult.authenticated || !authResult.user) {
     return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
   }
-  const user = authResult.user!;
+  const user = authResult.user;
   if (!user.permissions.includes('ai:use')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Insufficient permissions: ai:use required' }, { status: 403 });
   }
 
   try {
@@ -76,9 +78,16 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // Log AI usage
+    await logAIUsage(user, 'lab-suggestions', query, filteredTests.length);
+
     return NextResponse.json({
       success: true,
       data: filteredTests.slice(0, 20),
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error fetching lab suggestions:", error);
@@ -93,12 +102,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   // Authentication check
   const authResult = await authenticateRequest(request);
-  if (!authResult.authenticated) {
+  if (!authResult.authenticated || !authResult.user) {
     return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
   }
-  const user = authResult.user!;
+  const user = authResult.user;
   if (!user.permissions.includes('ai:use')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Insufficient permissions: ai:use required' }, { status: 403 });
   }
 
   try {
@@ -108,6 +117,8 @@ export async function POST(request: NextRequest) {
     if (!text) {
       return NextResponse.json({ success: true, suggestions: [] });
     }
+
+    const startTime = Date.now();
 
     // Use ZAI SDK to get context-aware suggestions (reads from .z-ai-config file)
     const zai = await ZAI.create();
@@ -128,6 +139,7 @@ Example format:
     });
 
     const response = completion.choices[0]?.message?.content || "";
+    const processingTime = Date.now() - startTime;
 
     // Parse the response to get suggestions
     let suggestions = [];
@@ -141,15 +153,63 @@ Example format:
       suggestions = [];
     }
 
+    // Log AI interaction
+    await createAuditLog({
+      actorId: user.employeeId,
+      actorName: user.name,
+      actorRole: user.role,
+      actionType: 'ai_query',
+      resourceType: 'diagnostic',
+      metadata: {
+        context,
+        textLength: text.length,
+        suggestionsCount: suggestions.length,
+        processingTime,
+      },
+    });
+
+    // Log AI usage
+    await logAIUsage(user, 'clinical-suggestions', text.slice(0, 100), suggestions.length);
+
     return NextResponse.json({
       success: true,
       suggestions: suggestions.slice(0, 5),
+      meta: {
+        accessedBy: user.employeeId,
+        accessedAt: new Date().toISOString(),
+        processingTime,
+      },
     });
   } catch (error) {
     console.error("Error getting AI suggestions:", error);
     return NextResponse.json(
-      { success: true, suggestions: [] },
+      { success: true, suggestions: [], error: "AI suggestions unavailable" },
       { status: 200 }
     );
+  }
+}
+
+/**
+ * Log AI usage for tracking and auditing
+ */
+async function logAIUsage(
+  user: AuthenticatedUser,
+  feature: string,
+  query: string,
+  resultCount: number
+): Promise<void> {
+  try {
+    await db.aIInteraction.create({
+      data: {
+        interactionType: `suggestions:${feature}`,
+        prompt: query,
+        response: JSON.stringify({ resultCount }),
+        humanReviewed: false,
+        modelUsed: 'suggestions-service',
+        tokensUsed: Math.ceil(query.length / 4),
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log AI usage:', error);
   }
 }

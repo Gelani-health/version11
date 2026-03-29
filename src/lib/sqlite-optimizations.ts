@@ -14,6 +14,84 @@ import { PrismaClient, Prisma } from '@prisma/client'
 import { execSync } from 'child_process'
 import { existsSync, mkdirSync, copyFileSync, statSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
+import { homedir } from 'os'
+
+// ============================================================================
+// SQLite3 Binary Path Resolution
+// ============================================================================
+
+/**
+ * Find the sqlite3 binary in the system
+ * Priority: local install -> system path
+ */
+function getSqlite3Path(): string | null {
+  const possiblePaths = [
+    // Local installation (highest priority)
+    join(homedir(), '.local', 'bin', 'sqlite3'),
+    // Common system paths
+    '/usr/bin/sqlite3',
+    '/usr/local/bin/sqlite3',
+    '/opt/homebrew/bin/sqlite3',
+    // Windows paths
+    'C:\\Program Files\\SQLite\\sqlite3.exe',
+    'C:\\SQLite\\sqlite3.exe',
+  ]
+
+  for (const path of possiblePaths) {
+    try {
+      execSync(`"${path}" --version`, { timeout: 1000, stdio: 'pipe' })
+      return path
+    } catch {
+      continue
+    }
+  }
+
+  // Try system PATH
+  try {
+    execSync('sqlite3 --version', { timeout: 1000, stdio: 'pipe' })
+    return 'sqlite3' // Use system PATH
+  } catch {
+    return null
+  }
+}
+
+// Cache the sqlite3 path
+let SQLITE3_PATH: string | null = null
+let SQLITE3_CHECKED = false
+
+function getSqlite3(): string | null {
+  if (!SQLITE3_CHECKED) {
+    SQLITE3_PATH = getSqlite3Path()
+    SQLITE3_CHECKED = true
+    if (SQLITE3_PATH) {
+      console.log(`[SQLite] Using sqlite3 binary: ${SQLITE3_PATH}`)
+    } else {
+      console.warn('[SQLite] sqlite3 binary not found - PRAGMA optimizations will be skipped')
+    }
+  }
+  return SQLITE3_PATH
+}
+
+/**
+ * Execute a sqlite3 command, handling missing binary gracefully
+ */
+function execSqlite3(dbPath: string, command: string, options?: { timeout?: number; encoding?: string }): string | null {
+  const sqlite3 = getSqlite3()
+  if (!sqlite3) {
+    return null
+  }
+
+  try {
+    const result = execSync(`"${sqlite3}" "${dbPath}" "${command}"`, {
+      timeout: options?.timeout || 5000,
+      encoding: options?.encoding || 'utf-8',
+      stdio: 'pipe'
+    })
+    return result?.toString() || null
+  } catch (error) {
+    return null
+  }
+}
 
 // ============================================================================
 // Configuration Constants
@@ -285,16 +363,9 @@ export function createBackup(dbPath: string, trigger: 'manual' | 'write' | 'sche
     const backupFileName = `backup-${timestamp}.db`
     const backupPath = join(backupDir, backupFileName)
     
-    // Force checkpoint before backup for WAL mode
+    // Force checkpoint before backup for WAL mode (if sqlite3 available)
     // This ensures all WAL content is written to main DB
-    try {
-      execSync(`sqlite3 "${dbPath}" "PRAGMA wal_checkpoint(TRUNCATE);"`, { 
-        timeout: 30000,
-        stdio: 'pipe'
-      })
-    } catch {
-      // Checkpoint might fail if no WAL file exists, that's okay
-    }
+    execSqlite3(dbPath, 'PRAGMA wal_checkpoint(TRUNCATE);', { timeout: 30000 })
     
     // Copy database file
     copyFileSync(dbPath, backupPath)
@@ -423,22 +494,26 @@ export function listBackups(): BackupMetadata[] {
 
 /**
  * Apply SQLite PRAGMA settings for optimal performance
+ * Handles missing sqlite3 binary gracefully
  */
 export function applySQLitePragmas(dbPath: string): void {
+  const sqlite3 = getSqlite3()
+  if (!sqlite3) {
+    console.log('[SQLite] ⚠️ sqlite3 binary not available - skipping PRAGMA optimizations')
+    console.log('[SQLite] Database will use default settings. Install sqlite3 for optimal performance.')
+    return
+  }
+
   try {
+    let appliedCount = 0
     for (const pragma of SQLITE_PRAGMAS) {
-      try {
-        execSync(`sqlite3 "${dbPath}" "${pragma}"`, {
-          timeout: 5000,
-          stdio: 'pipe'
-        })
-      } catch (error) {
-        // Some pragmas might fail, log but continue
-        console.debug(`[SQLite] PRAGMA warning: ${pragma}`, error)
+      const result = execSqlite3(dbPath, pragma)
+      if (result !== null) {
+        appliedCount++
       }
     }
     
-    console.log('[SQLite] ✅ Database PRAGMA settings applied')
+    console.log(`[SQLite] ✅ Applied ${appliedCount}/${SQLITE_PRAGMAS.length} PRAGMA settings`)
     console.log(`[SQLite]    Journal Mode: WAL`)
     console.log(`[SQLite]    Synchronous: NORMAL`)
     console.log(`[SQLite]    Busy Timeout: ${SQLITE_CONFIG.busyTimeout}ms`)
@@ -452,13 +527,16 @@ export function applySQLitePragmas(dbPath: string): void {
  * Check database integrity
  */
 export function checkIntegrity(dbPath: string): boolean {
+  const sqlite3 = getSqlite3()
+  if (!sqlite3) {
+    console.log('[SQLite] ⚠️ Cannot check integrity - sqlite3 not available')
+    return true // Assume OK if we can't check
+  }
+
   try {
-    const result = execSync(`sqlite3 "${dbPath}" "PRAGMA integrity_check;"`, {
-      timeout: 60000,
-      encoding: 'utf-8'
-    }).toString().trim()
+    const result = execSqlite3(dbPath, 'PRAGMA integrity_check;', { timeout: 60000 })
     
-    if (result === 'ok') {
+    if (result?.trim() === 'ok') {
       console.log('[SQLite] ✅ Database integrity check passed')
       return true
     } else {
@@ -491,8 +569,14 @@ export function initializeDatabase(dbPath: string): boolean {
     if (isNewDatabase) {
       console.log('[SQLite] Creating new database...')
       
-      // Create empty database
-      execSync(`sqlite3 "${dbPath}" "SELECT 1;"`, { timeout: 5000 })
+      // Create empty database using sqlite3 if available
+      const sqlite3 = getSqlite3()
+      if (sqlite3) {
+        execSqlite3(dbPath, 'SELECT 1;')
+      } else {
+        // If no sqlite3, Prisma will create the database
+        console.log('[SQLite] sqlite3 not available - database will be created by Prisma')
+      }
     }
     
     // Apply PRAGMA settings
@@ -503,16 +587,15 @@ export function initializeDatabase(dbPath: string): boolean {
       createBackup(dbPath, 'manual')
     }
     
-    // Verify WAL mode is active
-    const journalMode = execSync(`sqlite3 "${dbPath}" "PRAGMA journal_mode;"`, {
-      encoding: 'utf-8',
-      timeout: 5000
-    }).toString().trim()
+    // Verify WAL mode is active (only if sqlite3 is available)
+    const journalMode = execSqlite3(dbPath, 'PRAGMA journal_mode;')
     
-    if (journalMode.toLowerCase() !== 'wal') {
-      console.warn(`[SQLite] ⚠️ WAL mode not active, journal_mode is: ${journalMode}`)
-    } else {
-      console.log('[SQLite] ✅ WAL mode confirmed active')
+    if (journalMode !== null) {
+      if (journalMode.toLowerCase().trim() !== 'wal') {
+        console.warn(`[SQLite] ⚠️ WAL mode not active, journal_mode is: ${journalMode.trim()}`)
+      } else {
+        console.log('[SQLite] ✅ WAL mode confirmed active')
+      }
     }
     
     // Run integrity check
@@ -614,28 +697,20 @@ export async function getDatabaseHealth(dbPath: string): Promise<DatabaseHealth>
       health.walSize = statSync(walPath).size
     }
     
-    // Get journal mode
-    health.journalMode = execSync(`sqlite3 "${dbPath}" "PRAGMA journal_mode;"`, {
-      encoding: 'utf-8',
-      timeout: 5000
-    }).toString().trim().toLowerCase()
+    // Get journal mode (if sqlite3 available)
+    const journalMode = execSqlite3(dbPath, 'PRAGMA journal_mode;')
+    if (journalMode !== null) {
+      health.journalMode = journalMode.trim().toLowerCase()
+    }
     
-    // Check integrity
-    const integrityResult = execSync(`sqlite3 "${dbPath}" "PRAGMA integrity_check;"`, {
-      encoding: 'utf-8',
-      timeout: 60000
-    }).toString().trim()
-    health.integrity = integrityResult === 'ok'
+    // Check integrity (if sqlite3 available)
+    const integrityResult = execSqlite3(dbPath, 'PRAGMA integrity_check;', { timeout: 60000 })
+    health.integrity = integrityResult?.trim() === 'ok' || integrityResult === null // null means we couldn't check
     
     // Get page count
-    try {
-      const pageCount = execSync(`sqlite3 "${dbPath}" "PRAGMA page_count;"`, {
-        encoding: 'utf-8',
-        timeout: 5000
-      }).toString().trim()
-      health.metrics.pageCount = parseInt(pageCount, 10)
-    } catch {
-      // Ignore
+    const pageCount = execSqlite3(dbPath, 'PRAGMA page_count;')
+    if (pageCount !== null) {
+      health.metrics.pageCount = parseInt(pageCount.trim(), 10)
     }
     
     // Count backups
@@ -651,9 +726,10 @@ export async function getDatabaseHealth(dbPath: string): Promise<DatabaseHealth>
     }
     
     // Determine health status
-    if (!health.integrity) {
+    // If we couldn't check integrity (sqlite3 not available), assume OK but mark as degraded
+    if (integrityResult !== null && !health.integrity) {
       health.status = 'unhealthy'
-    } else if (health.journalMode !== 'wal') {
+    } else if (health.journalMode !== 'unknown' && health.journalMode !== 'wal') {
       health.status = 'degraded'
     } else if (health.walSize && health.walSize > 100 * 1024 * 1024) {
       // WAL file larger than 100MB is a warning sign

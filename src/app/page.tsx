@@ -84,6 +84,11 @@ import { UnifiedImagingModule } from "@/components/unified-imaging-module";
 import { SSOTSettings } from "@/components/ssot-settings";
 import { RoleManagement } from "@/components/role-management";
 
+// P5: New module imports
+import { PreventiveCareDashboard } from "@/components/preventive-care-dashboard";
+import { NurseTaskWorkflow } from "@/components/nurse-task-workflow";
+import { PredictionsDashboard } from "@/components/predictions-dashboard";
+
 // Import role-based access
 import { useRoleBasedAccess, getVisibleModules } from "@/hooks/use-role-based-access";
 import { UserRole, Permission } from "@/lib/rbac-middleware";
@@ -145,6 +150,10 @@ const allSidebarItems = [
   { id: "drugs", label: "Drug Safety", icon: Pill, permission: 'prescription:read' as Permission },
   { id: "imaging", label: "Imaging", icon: ImageIcon, permission: 'imaging:read' as Permission },
   { id: "lab", label: "Laboratory", icon: FlaskConical, permission: 'lab:read' as Permission },
+  // P5: New modules
+  { id: "preventive-care", label: "Preventive Care", icon: Shield, permission: 'patient:read' as Permission },
+  { id: "nurse-tasks", label: "Nurse Tasks", icon: ClipboardList, permission: 'nurse_task:read' as Permission },
+  { id: "predictions", label: "Risk Predictions", icon: TrendingUp, permission: 'ai:use' as Permission },
 ];
 
 // Configuration/Integration section (shown at bottom)
@@ -221,6 +230,13 @@ export default function AIHealthcareDashboard() {
         return <UnifiedImagingModule preselectedPatientId={selectedPatientId || undefined} />;
       case "lab":
         return <UnifiedLabModule preselectedPatientId={selectedPatientId || undefined} />;
+      // P5: New modules
+      case "preventive-care":
+        return <PreventiveCareDashboard patientId={selectedPatientId} />;
+      case "nurse-tasks":
+        return <NurseTaskWorkflow patientId={selectedPatientId} />;
+      case "predictions":
+        return <PredictionsDashboard patientId={selectedPatientId} />;
       case "voice":
         return <EnhancedVoiceDocumentation />;
       case "bahmni":

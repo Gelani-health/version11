@@ -4395,6 +4395,192 @@ async def list_namespaces():
     }
 
 
+# =============================================================================
+# P5: USPSTF PREVENTIVE CARE SCREENING ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/preventive/recommendations", tags=["P5 - Preventive Care"])
+async def get_preventive_care_recommendations(
+    date_of_birth: str,
+    gender: str,
+    risk_factors: Optional[List[str]] = None,
+    smoking_status: Optional[str] = None,
+    pack_years: Optional[float] = None,
+    pregnant: bool = False,
+    last_screenings: Optional[Dict[str, str]] = None,
+):
+    """
+    P5: Get personalized USPSTF preventive care recommendations.
+    
+    Returns A/B grade screening recommendations based on:
+    - Age and gender
+    - Risk factors
+    - Smoking history
+    - Pregnancy status
+    - Previous screening dates
+    """
+    from app.preventive.usptf_screening import get_usptf_engine
+    
+    engine = get_usptf_engine()
+    result = await engine.get_recommendations_for_patient(
+        date_of_birth=date_of_birth,
+        gender=gender,
+        risk_factors=risk_factors,
+        smoking_status=smoking_status,
+        pack_years=pack_years,
+        pregnant=pregnant,
+        last_screenings=last_screenings,
+    )
+    
+    return result
+
+
+@app.get("/api/v1/preventive/recommendations/{recommendation_id}", tags=["P5 - Preventive Care"])
+async def get_usptf_recommendation_detail(recommendation_id: str):
+    """P5: Get details of a specific USPSTF recommendation."""
+    from app.preventive.usptf_screening import USPSTF_RECOMMENDATIONS
+    
+    for rec in USPSTF_RECOMMENDATIONS:
+        if rec.id == recommendation_id:
+            return rec.to_dict()
+    
+    raise HTTPException(status_code=404, detail="Recommendation not found")
+
+
+@app.get("/api/v1/preventive/all-recommendations", tags=["P5 - Preventive Care"])
+async def list_all_usptf_recommendations():
+    """P5: List all USPSTF A/B grade recommendations."""
+    from app.preventive.usptf_screening import USPSTF_RECOMMENDATIONS
+    
+    return {
+        "recommendations": [r.to_dict() for r in USPSTF_RECOMMENDATIONS],
+        "total": len(USPSTF_RECOMMENDATIONS),
+        "grade_a_count": sum(1 for r in USPSTF_RECOMMENDATIONS if r.grade.value == "A"),
+        "grade_b_count": sum(1 for r in USPSTF_RECOMMENDATIONS if r.grade.value == "B"),
+    }
+
+
+# =============================================================================
+# P5: CLINICAL PREDICTION MODELS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/v1/prediction/readmission-risk", tags=["P5 - Predictions"])
+async def assess_readmission_risk(
+    length_of_stay_days: float,
+    admission_type: str,
+    conditions: List[str],
+    ed_visits_6months: int,
+    age: Optional[int] = None,
+    discharge_destination: Optional[str] = None,
+):
+    """
+    P5: Assess 30-day readmission risk using LACE Index.
+    
+    Parameters:
+    - length_of_stay_days: Length of hospital stay
+    - admission_type: 'elective', 'urgent', or 'emergency'
+    - conditions: List of medical conditions
+    - ed_visits_6months: Number of ED visits in past 6 months
+    - age: Patient age (optional modifier)
+    - discharge_destination: Destination after discharge (optional)
+    """
+    from app.prediction.clinical_models import get_prediction_engine
+    
+    engine = get_prediction_engine()
+    result = await engine.assess_readmission_risk(
+        length_of_stay_days=length_of_stay_days,
+        admission_type=admission_type,
+        conditions=conditions,
+        ed_visits_6months=ed_visits_6months,
+        age=age,
+        discharge_destination=discharge_destination,
+    )
+    
+    return result.to_dict()
+
+
+@app.post("/api/v1/prediction/deterioration-risk", tags=["P5 - Predictions"])
+async def assess_deterioration_risk(
+    respiratory_rate: int,
+    oxygen_saturation: float,
+    supplemental_oxygen: bool,
+    systolic_bp: int,
+    heart_rate: int,
+    temperature: float,
+    consciousness: str,
+    scale: int = 1,
+):
+    """
+    P5: Assess clinical deterioration risk using NEWS2.
+    
+    Parameters:
+    - respiratory_rate: Breaths per minute
+    - oxygen_saturation: SpO2 percentage
+    - supplemental_oxygen: Whether on supplemental oxygen
+    - systolic_bp: Systolic blood pressure mmHg
+    - heart_rate: Heart rate bpm
+    - temperature: Temperature in Celsius
+    - consciousness: 'alert' or 'cvpu'
+    - scale: 1 for normal, 2 for hypercapnic respiratory failure
+    """
+    from app.prediction.clinical_models import get_prediction_engine
+    
+    engine = get_prediction_engine()
+    result = await engine.assess_deterioration_risk(
+        respiratory_rate=respiratory_rate,
+        oxygen_saturation=oxygen_saturation,
+        supplemental_oxygen=supplemental_oxygen,
+        systolic_bp=systolic_bp,
+        heart_rate=heart_rate,
+        temperature=temperature,
+        consciousness=consciousness,
+        scale=scale,
+    )
+    
+    return result.to_dict()
+
+
+@app.post("/api/v1/prediction/comprehensive", tags=["P5 - Predictions"])
+async def comprehensive_prediction_assessment(
+    patient_data: Dict[str, Any],
+):
+    """
+    P5: Comprehensive risk assessment combining multiple prediction models.
+    """
+    from app.prediction.clinical_models import get_prediction_engine
+    
+    engine = get_prediction_engine()
+    result = await engine.comprehensive_risk_assessment(patient_data)
+    
+    return result
+
+
+@app.get("/api/v1/prediction/models", tags=["P5 - Predictions"])
+async def list_prediction_models():
+    """P5: List available clinical prediction models."""
+    return {
+        "models": [
+            {
+                "name": "LACE Index",
+                "type": "readmission_30day",
+                "description": "Predicts 30-day readmission risk",
+                "components": ["Length of stay", "Acuity", "Comorbidity", "ED visits"],
+                "score_range": "0-20",
+                "evidence": "Van Walraven et al., CMAJ 2010",
+            },
+            {
+                "name": "NEWS2",
+                "type": "deterioration",
+                "description": "National Early Warning Score for clinical deterioration",
+                "components": ["RR", "SpO2", "O2", "BP", "HR", "Temp", "LOC"],
+                "score_range": "0-20",
+                "evidence": "Royal College of Physicians, 2017",
+            },
+        ],
+        "total": 2,
+    }
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(HTTPException)

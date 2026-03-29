@@ -1,9 +1,10 @@
 #!/bin/sh
-# MedASR Service - Medical Speech Recognition
+# MedASR Service v3.0 - Medical Speech Recognition
 # Port: 3033
+# Features: VAD, Noise Reduction, Phonetic Matching, Negation Detection
 # Dependencies: init-first only (standalone service)
 
-echo "[s6-medasr] Starting MedASR speech recognition service..."
+echo "[s6-medasr] Starting MedASR v3.0 speech recognition service..."
 
 cd /app/mini-services/medasr-service
 
@@ -15,6 +16,14 @@ export MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-/app/models}"
 # Check if dependencies are ready
 if [ -f "/run/s6/basedir/env/SERVICE_READY" ]; then
     echo "[s6-medasr] ✅ Init complete, starting service"
+fi
+
+# Activate virtual environment if available (for VAD support)
+if [ -d "venv" ]; then
+    echo "[s6-medasr] Using virtual environment with VAD support"
+    . venv/bin/activate
+else
+    echo "[s6-medasr] Warning: venv not found, VAD may not be available"
 fi
 
 echo "[s6-medasr] Starting uvicorn on port ${PORT}..."

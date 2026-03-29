@@ -212,19 +212,31 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        actorId: assignedBy,
-        actorName: 'System',
-        actorRole: 'nurse',
-        actionType: 'CREATE',
-        resourceType: 'NurseTask',
-        resourceId: task.id,
-        patientId,
-        newValue: JSON.stringify({ taskDescription, priority, assignedTo }),
-      },
-    });
+    // Create audit log (non-blocking)
+    try {
+      // Verify actor exists or use a fallback
+      const actor = await db.employee.findUnique({
+        where: { employeeId: assignedBy },
+        select: { employeeId: true }
+      });
+      
+      if (actor) {
+        await db.auditLog.create({
+          data: {
+            actorId: assignedBy,
+            actorName: 'System',
+            actorRole: 'nurse',
+            actionType: 'CREATE',
+            resourceType: 'NurseTask',
+            resourceId: task.id,
+            patientId,
+            newValue: JSON.stringify({ taskDescription, priority, assignedTo }),
+          },
+        });
+      }
+    } catch (auditError) {
+      console.warn('Audit log creation failed (non-critical):', auditError);
+    }
 
     return NextResponse.json({
       success: true,
@@ -299,20 +311,34 @@ export async function PUT(request: NextRequest) {
       },
     });
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        actorId: completedBy || existingTask.assignedTo || 'system',
-        actorName: 'System',
-        actorRole: 'nurse',
-        actionType: updates.status === 'completed' ? 'COMPLETE' : 'UPDATE',
-        resourceType: 'NurseTask',
-        resourceId: taskId,
-        patientId: existingTask.patientId,
-        oldValue: JSON.stringify({ status: existingTask.status }),
-        newValue: JSON.stringify(updates),
-      },
-    });
+    // Create audit log (non-blocking)
+    const auditActorId = completedBy || existingTask.assignedTo;
+    try {
+      if (auditActorId) {
+        const actor = await db.employee.findUnique({
+          where: { employeeId: auditActorId },
+          select: { employeeId: true }
+        });
+        
+        if (actor) {
+          await db.auditLog.create({
+            data: {
+              actorId: auditActorId,
+              actorName: 'System',
+              actorRole: 'nurse',
+              actionType: updates.status === 'completed' ? 'COMPLETE' : 'UPDATE',
+              resourceType: 'NurseTask',
+              resourceId: taskId,
+              patientId: existingTask.patientId,
+              oldValue: JSON.stringify({ status: existingTask.status }),
+              newValue: JSON.stringify(updates),
+            },
+          });
+        }
+      }
+    } catch (auditError) {
+      console.warn('Audit log creation failed (non-critical):', auditError);
+    }
 
     return NextResponse.json({
       success: true,
@@ -365,19 +391,32 @@ export async function DELETE(request: NextRequest) {
       },
     });
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        actorId: cancelledBy || 'system',
-        actorName: 'System',
-        actorRole: 'nurse',
-        actionType: 'DELETE',
-        resourceType: 'NurseTask',
-        resourceId: taskId,
-        patientId: existingTask.patientId,
-        newValue: JSON.stringify({ cancelled: true, reason }),
-      },
-    });
+    // Create audit log (non-blocking)
+    try {
+      if (cancelledBy) {
+        const actor = await db.employee.findUnique({
+          where: { employeeId: cancelledBy },
+          select: { employeeId: true }
+        });
+        
+        if (actor) {
+          await db.auditLog.create({
+            data: {
+              actorId: cancelledBy,
+              actorName: 'System',
+              actorRole: 'nurse',
+              actionType: 'DELETE',
+              resourceType: 'NurseTask',
+              resourceId: taskId,
+              patientId: existingTask.patientId,
+              newValue: JSON.stringify({ cancelled: true, reason }),
+            },
+          });
+        }
+      }
+    } catch (auditError) {
+      console.warn('Audit log creation failed (non-critical):', auditError);
+    }
 
     return NextResponse.json({
       success: true,

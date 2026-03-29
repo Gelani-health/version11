@@ -62,6 +62,8 @@ import { toast } from "sonner";
 import { VoiceInputButton } from "@/components/voice-input-button";
 import { TTSButton } from "@/components/tts-button";
 import { LLMProviderSelector } from "@/components/llm-provider-selector";
+import { PredictionsPanel } from "@/components/predictions-panel";
+import { PreventiveCarePanel } from "@/components/preventive-care-panel";
 
 // Types
 interface Patient {
@@ -118,6 +120,13 @@ interface ClinicalIntelligenceProps {
   onNavigateToSettings?: () => void;
 }
 
+// Tab configuration
+const TABS = [
+  { id: 'consultation', label: 'AI Consultation', icon: MessageSquare },
+  { id: 'predictions', label: 'Predictions', icon: TrendingUp },
+  { id: 'preventive', label: 'Preventive Care', icon: Shield },
+] as const;
+
 // Quick query templates
 const QUICK_QUERIES = [
   { category: "Cardiovascular", queries: [
@@ -149,6 +158,7 @@ const QUICK_QUERIES = [
 
 export function ClinicalIntelligence({ preselectedPatientId, onNavigateToSettings }: ClinicalIntelligenceProps) {
   // State
+  const [activeTab, setActiveTab] = useState<'consultation' | 'predictions' | 'preventive'>('consultation');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>(preselectedPatientId || "");
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
@@ -375,6 +385,38 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
             </Badge>
           </div>
         </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 border-b pb-2">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <Button
+                key={tab.id}
+                variant={isActive ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab(tab.id)}
+                className={isActive ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : ''}
+              >
+                <Icon className="h-4 w-4 mr-2" />
+                {tab.label}
+              </Button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'predictions' && (
+          <PredictionsPanel patientId={selectedPatientId || null} />
+        )}
+
+        {activeTab === 'preventive' && (
+          <PreventiveCarePanel patientId={selectedPatientId || null} />
+        )}
+
+        {activeTab === 'consultation' && (
+        <>
 
         {/* Patient Selection with Grid */}
         <Card className="border-0 shadow-md">
@@ -805,6 +847,8 @@ Welcome to the **Unified Clinical Decision Support System**. I combine:
             </Card>
           </div>
         </div>
+        </>
+        )}
       </div>
     </TooltipProvider>
   );

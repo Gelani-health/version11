@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from './db';
 import { authenticateRequest, AuthenticatedUser, checkPermission } from './auth-middleware';
+import { Permission } from './rbac-middleware';
 
 // =============================================================================
 // Strict TypeScript Types for Audit Events
@@ -352,8 +353,8 @@ export function withAuditAndAuth(
     context?: unknown
   ) => Promise<NextResponse>,
   config: AuditConfig & {
-    requiredPermission?: string;
-    requiredPermissions?: string[];
+    requiredPermission?: Permission;
+    requiredPermissions?: Permission[];
   }
 ): (request: NextRequest, context?: unknown) => Promise<NextResponse> {
   return withAudit(

@@ -38,7 +38,7 @@ import {
   Syringe,
   Heart,
   Brain,
-  Lungs,
+  Wind,
   ArrowRight,
   RefreshCw,
 } from 'lucide-react';
@@ -130,7 +130,7 @@ const categoryIcons: Record<string, React.ReactNode> = {
   wound_care: <Bandage className="h-4 w-4" />,
   patient_care: <Heart className="h-4 w-4" />,
   specimen: <Syringe className="h-4 w-4" />,
-  respiratory: <Lungs className="h-4 w-4" />,
+  respiratory: <Wind className="h-4 w-4" />,
   education: <Brain className="h-4 w-4" />,
   documentation: <FileText className="h-4 w-4" />,
 };

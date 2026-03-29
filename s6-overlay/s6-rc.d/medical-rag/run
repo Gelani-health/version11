@@ -1,27 +1,21 @@
 #!/bin/sh
-# Medical RAG Service - PubMed/PMC-powered diagnostic RAG
+# Medical RAG Service v2.0 - Full Implementation
 # Port: 3031
-# Dependencies: init-first only (standalone - external deps only: Pinecone, NCBI, Z.AI)
+# Features: Z.ai LLM, Semantic Search, Medical Knowledge Base
 
-echo "[s6-medical-rag] Starting Medical RAG service..."
+echo "[s6-medical-rag] Starting Medical RAG Service v2.0..."
 
 cd /app/mini-services/medical-rag-service
 
-# Set environment
 export PORT="${MEDICAL_RAG_PORT:-3031}"
-export PINECONE_API_KEY="${PINECONE_API_KEY:-}"
-export PINECONE_INDEX_NAME="${PINECONE_INDEX_NAME:-medical-diagnostic-rag}"
-export PINECONE_NAMESPACE="${PINECONE_NAMESPACE:-pubmed}"
 export ZAI_API_KEY="${ZAI_API_KEY:-}"
-export NCBI_API_KEY="${NCBI_API_KEY:-}"
-export NCBI_EMAIL="${NCBI_EMAIL:-info@gelani-health.ai}"
-export GLM_MODEL="${GLM_MODEL:-glm-4.7-flash}"
+export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 
-# Check if dependencies are ready
-if [ -f "/run/s6/basedir/env/SERVICE_READY" ]; then
-    echo "[s6-medical-rag] ✅ Init complete, starting service"
+# Activate virtual environment if available
+if [ -d "venv" ]; then
+    echo "[s6-medical-rag] Using virtual environment"
+    . venv/bin/activate
 fi
 
-echo "[s6-medical-rag] Starting uvicorn on port ${PORT}..."
-echo "[s6-medical-rag] External dependencies: Pinecone, NCBI, Z.AI"
-exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1
+echo "[s6-medical-rag] Starting on port ${PORT}..."
+exec python index_full.py

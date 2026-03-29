@@ -1,0 +1,25 @@
+# LangChain RAG Service Requirements
+# ===================================
+
+# FastAPI and Server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# Z.ai SDK
+z-ai-web-dev-sdk>=1.0.0
+
+# Embeddings
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# Data Processing
+numpy>=1.24.0
+
+# HTTP Client
+httpx>=0.25.0
+
+# Logging
+loguru>=0.7.2
+python-dotenv>=1.0.0

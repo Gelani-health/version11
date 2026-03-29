@@ -1,74 +1,83 @@
+/**
+ * MedASR Transcribe Route - Backward Compatibility Layer
+ * 
+ * This route forwards requests to the unified /api/asr endpoint.
+ * The unified API uses:
+ * - Primary: z-ai-web-dev-sdk (cloud ASR)
+ * - Fallback: MedASR Python service (port 3033)
+ * - Final fallback: Web Speech API (client-side)
+ * 
+ * @version 2.0.0
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from '@/lib/auth-middleware';
-
-// MedASR Service Configuration
-const MEDASR_SERVICE_URL = "http://localhost:3033";
 
 export async function POST(request: NextRequest) {
   // Authentication check
   const authResult = await authenticateRequest(request);
   if (!authResult.authenticated) {
-    return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: authResult.error },
+      { status: 401 }
+    );
   }
+  
   const user = authResult.user!;
   if (!user.permissions.includes('ai:use')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json(
+      { success: false, error: 'Forbidden - AI usage not permitted' },
+      { status: 403 }
+    );
   }
-
+  
   try {
     const body = await request.json();
     
-    const { audio_base64, sample_rate = 16000, language = "en", context, enable_medical_postprocess = true } = body;
+    // Forward to unified ASR API
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                    process.env.VERCEL_URL ? 
+                    `https://${process.env.VERCEL_URL}` : 
+                    'http://localhost:3000';
     
-    if (!audio_base64) {
-      return NextResponse.json(
-        { error: "audio_base64 is required" },
-        { status: 400 }
-      );
-    }
-    
-    // Forward to MedASR service
-    const response = await fetch(`${MEDASR_SERVICE_URL}/transcribe`, {
+    const response = await fetch(`${baseUrl}/api/asr`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Forward authorization
+        "Cookie": request.headers.get("cookie") || "",
       },
-      body: JSON.stringify({
-        audio_base64,
-        sample_rate,
-        language,
-        context,
-        enable_medical_postprocess,
-      }),
+      body: JSON.stringify(body),
     });
     
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("MedASR service error:", error);
-      
-      // Return fallback response
-      return NextResponse.json({
+    const data = await response.json();
+    
+    // Transform response to match expected format
+    return NextResponse.json({
+      transcription: data.transcription || "",
+      confidence: data.confidence || 0,
+      word_count: data.wordCount || data.word_count || 0,
+      processing_time_ms: data.processingTimeMs || data.processing_time_ms || 0,
+      medical_terms_detected: data.medicalTermsDetected || data.medical_terms_detected || [],
+      segments: data.segments || [],
+      engine: data.engine || "unknown",
+      success: data.success,
+    });
+    
+  } catch (error) {
+    console.error("MedASR API error:", error);
+    
+    return NextResponse.json(
+      {
+        success: false,
         transcription: "",
         confidence: 0,
         word_count: 0,
         processing_time_ms: 0,
         medical_terms_detected: [],
         segments: [],
-        error: "MedASR service unavailable",
-      });
-    }
-    
-    const data = await response.json();
-    
-    return NextResponse.json(data);
-    
-  } catch (error) {
-    console.error("MedASR API error:", error);
-    
-    return NextResponse.json(
-      { 
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
+        engine: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );
@@ -76,16 +85,35 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  // Forward to unified ASR API health check
   try {
-    const response = await fetch(`${MEDASR_SERVICE_URL}/health`);
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                    process.env.VERCEL_URL ? 
+                    `https://${process.env.VERCEL_URL}` : 
+                    'http://localhost:3000';
+    
+    const response = await fetch(`${baseUrl}/api/asr`, {
+      headers: {
+        "Cookie": request.headers.get("cookie") || "",
+      },
+    });
+    
     const data = await response.json();
     
-    return NextResponse.json(data);
-  } catch (error) {
     return NextResponse.json({
-      status: "unavailable",
+      status: data.status || "unknown",
+      model_loaded: data.engines?.primary?.status === "ready" || false,
+      gpu_available: data.engines?.fallback?.details?.gpu_available || false,
+      engine: data.engines?.primary?.name || "unknown",
+      version: "2.0.0",
+    });
+    
+  } catch {
+    return NextResponse.json({
+      status: "degraded",
       model_loaded: false,
       gpu_available: false,
+      engine: "unavailable",
     });
   }
 }

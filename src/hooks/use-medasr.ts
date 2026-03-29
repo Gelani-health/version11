@@ -1,5 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
+/**
+ * useMedASR Hook - Unified Medical Speech Recognition
+ * 
+ * Features:
+ * - Uses unified /api/asr endpoint (z-ai primary, MedASR fallback)
+ * - Automatic fallback to Web Speech API
+ * - Audio level monitoring
+ * - Medical term post-processing
+ * - Rerecord capability
+ * 
+ * @version 2.0.0
+ */
+
 interface UseMedASROptions {
   context?: string;
   appendMode?: boolean;
@@ -8,20 +21,22 @@ interface UseMedASROptions {
   onTranscriptionStart?: () => void;
   onTranscriptionEnd?: (transcript: string) => void;
   onError?: (error: string) => void;
+  language?: string;
 }
 
 interface MedASRResult {
   transcription: string;
   confidence: number;
-  word_count: number;
-  processing_time_ms: number;
-  medical_terms_detected: string[];
+  wordCount: number;
+  processingTimeMs: number;
+  medicalTermsDetected: string[];
   segments: Array<{
     start: number;
     end: number;
     text: string;
     confidence: number;
   }>;
+  engine: string;
 }
 
 interface UseMedASRReturn {
@@ -30,9 +45,13 @@ interface UseMedASRReturn {
   audioLevel: number;
   error: string | null;
   lastResult: MedASRResult | null;
+  recordingHistory: MedASRResult[];
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   toggleRecording: () => void;
+  rerecord: () => Promise<void>;
+  clearHistory: () => void;
+  canRerecord: boolean;
 }
 
 export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
@@ -44,6 +63,7 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
     onTranscriptionStart,
     onTranscriptionEnd,
     onError,
+    language = "en",
   } = options;
   
   const [isRecording, setIsRecording] = useState(false);
@@ -51,6 +71,7 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<MedASRResult | null>(null);
+  const [recordingHistory, setRecordingHistory] = useState<MedASRResult[]>([]);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -58,6 +79,7 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const autoStopTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastAudioBlobRef = useRef<Blob | null>(null);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -111,12 +133,15 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
     setAudioLevel(0);
   }, []);
   
-  // Process audio with MedASR
-  const processAudio = useCallback(async (audioBlob: Blob) => {
+  // Process audio with unified ASR API
+  const processAudio = useCallback(async (audioBlob: Blob, isRerecord: boolean = false) => {
     setIsProcessing(true);
     setError(null);
     
     try {
+      // Store for potential rerecord
+      lastAudioBlobRef.current = audioBlob;
+      
       // Convert to base64
       const reader = new FileReader();
       
@@ -124,14 +149,14 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
         const base64Audio = (reader.result as string).split(",")[1];
         
         try {
-          // Call MedASR API (Next.js route forwards to port 3033 internally)
-          const response = await fetch("/api/medasr/transcribe", {
+          // Call unified ASR API
+          const response = await fetch("/api/asr", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               audio_base64: base64Audio,
               sample_rate: 16000,
-              language: "en",
+              language,
               context,
               enable_medical_postprocess: true,
             }),
@@ -139,26 +164,78 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
           
           const data = await response.json();
           
-          if (response.ok) {
-            setLastResult(data);
+          if (response.ok && data.transcription) {
+            const result: MedASRResult = {
+              transcription: data.transcription,
+              confidence: data.confidence || 0.9,
+              wordCount: data.word_count || data.transcription.split(" ").length,
+              processingTimeMs: data.processing_time_ms || 0,
+              medicalTermsDetected: data.medical_terms_detected || [],
+              segments: data.segments || [],
+              engine: data.engine || "unknown",
+            };
+            
+            setLastResult(result);
+            
+            // Add to history if not a rerecord
+            if (!isRerecord) {
+              setRecordingHistory(prev => [...prev.slice(-4), result]); // Keep last 5
+            }
+            
             onTranscriptionEnd?.(data.transcription);
           } else {
-            throw new Error(data.error || "Transcription failed");
+            // Server returned empty transcription - use Web Speech API fallback
+            console.log("ASR returned empty, using Web Speech API fallback");
+            const transcription = await fallbackTranscription();
+            
+            if (transcription) {
+              const result: MedASRResult = {
+                transcription,
+                confidence: 0.8,
+                wordCount: transcription.split(" ").length,
+                processingTimeMs: 0,
+                medicalTermsDetected: [],
+                segments: [],
+                engine: "web-speech-api",
+              };
+              
+              setLastResult(result);
+              if (!isRerecord) {
+                setRecordingHistory(prev => [...prev.slice(-4), result]);
+              }
+              onTranscriptionEnd?.(transcription);
+            } else {
+              setError("Transcription failed - no speech detected");
+              onError?.("Transcription failed - no speech detected");
+            }
           }
           
         } catch (err) {
-          // Fallback to Web Speech API
-          console.log("MedASR unavailable, using Web Speech API fallback");
-          const transcription = await fallbackTranscription(audioBlob);
-          setLastResult({
-            transcription,
-            confidence: 0.8,
-            word_count: transcription.split(" ").length,
-            processing_time_ms: 0,
-            medical_terms_detected: [],
-            segments: [],
-          });
-          onTranscriptionEnd?.(transcription);
+          // Network error - fallback to Web Speech API
+          console.log("ASR API unavailable, using Web Speech API fallback:", err);
+          const transcription = await fallbackTranscription();
+          
+          if (transcription) {
+            const result: MedASRResult = {
+              transcription,
+              confidence: 0.8,
+              wordCount: transcription.split(" ").length,
+              processingTimeMs: 0,
+              medicalTermsDetected: [],
+              segments: [],
+              engine: "web-speech-api",
+            };
+            
+            setLastResult(result);
+            if (!isRerecord) {
+              setRecordingHistory(prev => [...prev.slice(-4), result]);
+            }
+            onTranscriptionEnd?.(transcription);
+          } else {
+            const errorMessage = err instanceof Error ? err.message : "Transcription failed";
+            setError(errorMessage);
+            onError?.(errorMessage);
+          }
         }
         
         setIsProcessing(false);
@@ -178,24 +255,26 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
       setIsProcessing(false);
       onError?.(errorMessage);
     }
-  }, [context, onTranscriptionEnd, onError]);
+  }, [context, language, onTranscriptionEnd, onError]);
   
   // Fallback transcription using Web Speech API
-  const fallbackTranscription = useCallback((audioBlob: Blob): Promise<string> => {
+  const fallbackTranscription = useCallback((): Promise<string> => {
     return new Promise((resolve) => {
-      if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      const SpeechRecognition = (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition; SpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition || 
+                                (window as unknown as { SpeechRecognition?: typeof window.SpeechRecognition }).SpeechRecognition;
+      
+      if (!SpeechRecognition) {
         resolve("");
         return;
       }
       
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       const recognition = new SpeechRecognition();
       
       recognition.continuous = false;
       recognition.interimResults = false;
-      recognition.lang = "en-US";
+      recognition.lang = language === "en" ? "en-US" : language;
       
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         resolve(event.results[0][0].transcript);
       };
       
@@ -205,7 +284,7 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
       
       recognition.start();
     });
-  }, []);
+  }, [language]);
   
   // Start recording
   const startRecording = useCallback(async () => {
@@ -225,8 +304,28 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
       streamRef.current = stream;
       startAudioMonitoring(stream);
       
+      // Determine supported MIME type
+      const mimeTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/wav"
+      ];
+      
+      let selectedMimeType = "";
+      for (const mimeType of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+          selectedMimeType = mimeType;
+          break;
+        }
+      }
+      
+      if (!selectedMimeType) {
+        throw new Error("No supported audio format found");
+      }
+      
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
+        mimeType: selectedMimeType,
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -242,11 +341,11 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
         stopAudioMonitoring();
         stream.getTracks().forEach(track => track.stop());
         
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioBlob = new Blob(audioChunksRef.current, { type: selectedMimeType });
         processAudio(audioBlob);
       };
       
-      mediaRecorder.start(100);
+      mediaRecorder.start(100); // Collect data every 100ms
       setIsRecording(true);
       onTranscriptionStart?.();
       
@@ -288,15 +387,36 @@ export function useMedASR(options: UseMedASROptions = {}): UseMedASRReturn {
     }
   }, [isRecording, startRecording, stopRecording]);
   
+  // Rerecord - reprocess last audio with potentially different settings
+  const rerecord = useCallback(async () => {
+    if (lastAudioBlobRef.current) {
+      await processAudio(lastAudioBlobRef.current, true);
+    } else {
+      // No previous audio - start new recording
+      await startRecording();
+    }
+  }, [processAudio, startRecording]);
+  
+  // Clear recording history
+  const clearHistory = useCallback(() => {
+    setRecordingHistory([]);
+    setLastResult(null);
+    lastAudioBlobRef.current = null;
+  }, []);
+  
   return {
     isRecording,
     isProcessing,
     audioLevel,
     error,
     lastResult,
+    recordingHistory,
     startRecording,
     stopRecording,
     toggleRecording,
+    rerecord,
+    clearHistory,
+    canRerecord: !!lastAudioBlobRef.current,
   };
 }
 

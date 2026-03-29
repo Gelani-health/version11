@@ -458,7 +458,6 @@ export const MEDICAL_ABBREVIATIONS: Record<string, string> = {
   "now": "STAT",
   "o t c": "OTC",
   "over the counter": "OTC",
-  "p r n": "PRN",
   "q 4 h": "q4h",
   "q 6 h": "q6h",
   "q 8 h": "q8h",
@@ -526,7 +525,6 @@ export const ANATOMICAL_TERMS: Record<string, string> = {
   "cervical": "cervical",
   "abdominal": "abdominal",
   "pelvic": "pelvic",
-  "cranial": "cranial",
   "facial": "facial",
   
   // Organs
@@ -568,7 +566,6 @@ export const CLINICAL_SYMPTOMS: Record<string, string> = {
   "constipation": "constipation",
   "fatigue": "fatigue",
   "malaise": "malaise",
-  "dyspnea": "dyspnea",
   "orthopnea": "orthopnea",
   "edema": "edema",
   "cyanosis": "cyanosis",

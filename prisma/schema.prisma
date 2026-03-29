@@ -1257,3 +1257,369 @@ model ICDCode {
   @@index([code])
   @@map("icd_codes")
 }
+
+// ============================================
+// ASR LEARNING SYSTEM MODELS
+// World-class medical ASR with continuous learning
+// ============================================
+
+/// ASR Transcription - Store all transcriptions for learning and audit
+model ASRTranscription {
+  id                  String              @id @default(cuid())
+  sessionId           String?             // Session identifier for grouping
+  patientId           String?
+  consultationId      String?
+  userId              String              // User who made the transcription
+  
+  // Audio metadata
+  audioDurationMs     Int?                // Duration in milliseconds
+  audioFormat         String?             // webm, wav, mp3
+  audioSampleRate     Int?                @default(16000)
+  audioSizeBytes      Int?
+  audioQualityScore   Float?              // 0-1 quality assessment
+  snrDb               Float?              // Signal-to-noise ratio
+  
+  // Transcription results
+  originalText        String              // Original transcription
+  finalText           String?             // After user corrections
+  correctedText       String?             // User's corrected version
+  
+  // Confidence and metrics
+  overallConfidence   Float?              // Overall confidence score
+  wordCount           Int                 @default(0)
+  speakingRateWpm     Float?              // Words per minute
+  medicalTermCount    Int                 @default(0)
+  medicalTermAccuracy Float?              // Medical term recognition accuracy
+  
+  // Engine info
+  engine              String              // z-ai-asr, medasr-local, web-speech-api
+  engineVersion       String?
+  processingTimeMs    Int?
+  modelVersion        String?
+  
+  // Context
+  context             String?             // medical, consultation, notes
+  soapSection         String?             // subjective, objective, assessment, plan
+  specialty           String?             // cardiology, oncology, etc.
+  
+  // Learning flags
+  hasCorrection       Boolean             @default(false)
+  correctionReviewed  Boolean             @default(false)
+  learningProcessed   Boolean             @default(false)
+  
+  // Quality assessment
+  qualityRating       Int?                // 1-5 user rating
+  qualityFeedback     String?
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  // Relations
+  wordConfidences     ASRWordConfidence[]
+  corrections         ASRCorrection[]
+  medicalEntities     ASRMedicalEntity[]
+  qualityMetrics      ASRQualityMetric?
+  
+  @@index([userId])
+  @@index([patientId])
+  @@index([sessionId])
+  @@index([engine])
+  @@index([hasCorrection])
+  @@index([createdAt])
+  @@map("asr_transcriptions")
+}
+
+/// ASR Word Confidence - Word-level confidence scores
+model ASRWordConfidence {
+  id                String            @id @default(cuid())
+  transcriptionId   String
+  word              String
+  confidence        Float
+  startTimeMs       Int?
+  endTimeMs         Int?
+  isMedicalTerm     Boolean           @default(false)
+  wasCorrected      Boolean           @default(false)
+  correctionText    String?
+  createdAt         DateTime          @default(now())
+  
+  transcription     ASRTranscription  @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  
+  @@index([transcriptionId])
+  @@index([isMedicalTerm])
+  @@map("asr_word_confidences")
+}
+
+/// ASR Correction - User corrections for learning
+model ASRCorrection {
+  id                  String              @id @default(cuid())
+  transcriptionId     String
+  userId              String
+  
+  // Correction details
+  originalText        String              // What ASR produced
+  correctedText       String              // What user changed it to
+  correctionType      String              // substitution, insertion, deletion, reorder
+  position            Int?                // Position in text
+  
+  // Pattern extraction
+  patternType         String?             // phonetic, abbreviation, medical-term, context
+  patternExtracted    String?             // Extracted learnable pattern
+  patternFrequency    Int                 @default(1)
+  
+  // Context
+  surroundingContext  String?             // Words before and after
+  soapSection         String?
+  specialty           String?
+  
+  // Learning status
+  learningApplied     Boolean             @default(false)
+  appliedAt           DateTime?
+  appliedToModel      String?
+  
+  // Feedback
+  wasHelpful          Boolean?
+  userFeedback        String?
+  
+  createdAt           DateTime            @default(now())
+  
+  transcription       ASRTranscription   @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  
+  @@index([transcriptionId])
+  @@index([userId])
+  @@index([correctionType])
+  @@index([learningApplied])
+  @@map("asr_corrections")
+}
+
+/// ASR Medical Entity - Extracted medical entities
+model ASRMedicalEntity {
+  id                  String              @id @default(cuid())
+  transcriptionId     String
+  entityType          String              // drug, condition, procedure, anatomy, lab, abbreviation
+  originalText        String              // Text as transcribed
+  normalizedText      String?             // Normalized/canonical form
+  codeSystem          String?             // RxNorm, SNOMED, ICD-10
+  code                String?             // Code if available
+  confidence          Float?
+  wasCorrect          Boolean?            // User validation
+  wasCorrected        Boolean             @default(false)
+  userCorrection      String?
+  createdAt           DateTime            @default(now())
+  
+  transcription       ASRTranscription   @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  
+  @@index([transcriptionId])
+  @@index([entityType])
+  @@index([codeSystem])
+  @@map("asr_medical_entities")
+}
+
+/// ASR Quality Metric - Detailed quality metrics
+model ASRQualityMetric {
+  id                      String              @id @default(cuid())
+  transcriptionId         String              @unique
+  
+  // Audio quality
+  snrDb                   Float?              // Signal-to-noise ratio
+  signalLevel             Float?              // Average signal level
+  noiseLevel              Float?              // Average noise level
+  silenceRatio            Float?              // Ratio of silence
+  clippingRatio           Float?              // Ratio of clipped samples
+  
+  // Speech characteristics
+  speakingRateWpm         Float?              // Words per minute
+  pauseCount              Int?
+  avgPauseDurationMs      Float?
+  fillerWordCount         Int?                // Um, uh, etc.
+  
+  // Recognition quality
+  medicalTermAccuracy     Float?              // Accuracy for medical terms
+  drugNameAccuracy        Float?              // Accuracy for drug names
+  abbreviationAccuracy    Float?              // Accuracy for abbreviations
+  overallWer              Float?              // Word Error Rate (if corrected)
+  
+  // Performance
+  processingTimeMs        Int?
+  audioTransferTimeMs     Int?
+  totalTimeMs             Int?
+  
+  // Audio quality assessment
+  qualityCategory         String?             // excellent, good, fair, poor
+  qualityIssues           String?             // JSON array of issues
+  recommendedActions      String?             // JSON array of recommendations
+  
+  createdAt               DateTime            @default(now())
+  
+  transcription           ASRTranscription   @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  
+  @@index([transcriptionId])
+  @@index([qualityCategory])
+  @@map("asr_quality_metrics")
+}
+
+/// Speaker Profile - Voice profiles for adaptation
+model SpeakerProfile {
+  id                      String              @id @default(cuid())
+  userId                  String              @unique
+  
+  // Voice characteristics
+  voiceEmbedding          String?             // Voice embedding vector (JSON)
+  embeddingModel          String?             // Model used for embedding
+  
+  // Speaking characteristics
+  avgSpeakingRateWpm      Float?
+  avgPauseDurationMs      Float?
+  accentType              String?             // detected accent type
+  accentConfidence        Float?
+  language                String              @default("en")
+  dialect                 String?
+  
+  // Personal vocabulary
+  customVocabulary        String?             // JSON: user-specific terms
+  commonCorrections       String?             // JSON: frequently made corrections
+  preferredAbbreviations  String?             // JSON: preferred abbreviations
+  
+  // Learning stats
+  totalSessions           Int                 @default(0)
+  totalAudioMinutes       Float               @default(0)
+  correctionsCount        Int                 @default(0)
+  learningVersion         Int                 @default(1)
+  
+  // Model adaptation
+  adaptedModelVersion     String?
+  adaptationDate          DateTime?
+  adaptationScore         Float?
+  
+  isActive                Boolean             @default(true)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  
+  @@index([userId])
+  @@index([isActive])
+  @@map("speaker_profiles")
+}
+
+/// ASR Vocabulary - Expanded medical vocabulary
+model ASRVocabulary {
+  id                      String              @id @default(cuid())
+  term                    String
+  canonicalForm           String              // Normalized form
+  category                String              // drug, condition, procedure, etc.
+  subcategory             String?
+  
+  // Codes and references
+  rxnormCode              String?
+  snomedCode              String?
+  icdCode                 String?
+  atcCode                 String?
+  
+  // Pronunciation variants
+  pronunciation           String?             // IPA pronunciation
+  phoneticVariants        String?             // JSON array of phonetic spellings
+  commonMisspellings      String?             // JSON array of common errors
+  
+  // Context
+  specialties             String?             // JSON array of applicable specialties
+  soapSections            String?             // JSON array of SOAP sections
+  relatedTerms            String?             // JSON array of related terms
+  
+  // Usage and learning
+  usageCount              Int                 @default(0)
+  correctionCount         Int                 @default(0)
+  accuracyRate            Float?
+  
+  // Source
+  source                  String              // rxnorm, user, manual, learned
+  sourceReference         String?
+  verifiedBy              String?
+  verifiedAt              DateTime?
+  
+  isActive                Boolean             @default(true)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  
+  @@unique([term, category])
+  @@index([term])
+  @@index([category])
+  @@index([rxnormCode])
+  @@index([snomedCode])
+  @@index([isActive])
+  @@map("asr_vocabulary")
+}
+
+/// ASR Learning Pattern - Extracted patterns from corrections
+model ASRLearningPattern {
+  id                      String              @id @default(cuid())
+  patternType             String              // phonetic, abbreviation, context, specialty
+  patternName             String              // Human-readable name
+  
+  // Pattern definition
+  originalPattern         String              // What was recognized
+  correctedPattern        String              // What it should be
+  regexPattern            String?             // Regex for matching
+  
+  // Context rules
+  precedingContext        String?             // Words that precede
+  followingContext        String?             // Words that follow
+  soapSection             String?             // SOAP section context
+  specialty               String?             // Specialty context
+  
+  // Learning metrics
+  occurrenceCount         Int                 @default(0)
+  successRate             Float               @default(0)
+  lastOccurrence          DateTime?
+  
+  // Pattern status
+  isActive                Boolean             @default(true)
+  isVerified              Boolean             @default(false)
+  verifiedBy              String?
+  verifiedAt              DateTime?
+  
+  // Application
+  applyAutomatically      Boolean             @default(false)
+  confidenceThreshold     Float               @default(0.5)
+  
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  
+  @@unique([patternType, originalPattern, correctedPattern])
+  @@index([patternType])
+  @@index([isActive])
+  @@index([applyAutomatically])
+  @@map("asr_learning_patterns")
+}
+
+/// ASR Session - Group transcriptions by session
+model ASRSession {
+  id                      String              @id @default(cuid())
+  userId                  String
+  patientId               String?
+  consultationId          String?
+  
+  // Session metadata
+  sessionType             String              // consultation, documentation, notes
+  specialty               String?
+  deviceType              String?             // desktop, mobile, tablet
+  browserInfo             String?
+  
+  // Session stats
+  transcriptionCount      Int                 @default(0)
+  totalAudioMinutes       Float               @default(0)
+  totalWordCount          Int                 @default(0)
+  averageConfidence       Float?
+  correctionCount         Int                 @default(0)
+  
+  // Quality summary
+  overallQuality          String?             // excellent, good, fair, poor
+  issues                  String?             // JSON array of issues
+  
+  startedAt               DateTime            @default(now())
+  endedAt                 DateTime?
+  createdAt               DateTime            @default(now())
+  
+  @@index([userId])
+  @@index([patientId])
+  @@index([consultationId])
+  @@index([startedAt])
+  @@map("asr_sessions")
+}

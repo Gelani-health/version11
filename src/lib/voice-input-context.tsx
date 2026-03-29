@@ -1,11 +1,19 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
-import type { TranscriptionResult } from "@/components/enhanced-voice-input";
 
 // ============================================
 // TYPES
 // ============================================
+
+interface TranscriptionResult {
+  transcription: string;
+  confidence: number;
+  wordCount: number;
+  processingTimeMs: number;
+  medicalTermsDetected: string[];
+  engine: string;
+}
 
 interface VoiceInputContextType {
   // Active target tracking

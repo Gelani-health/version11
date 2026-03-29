@@ -648,10 +648,13 @@ export function generateApiKey(): string {
 
 /**
  * Public endpoints that don't require authentication
+ * These are read-only endpoints for demo/configuration purposes
  */
 export const PUBLIC_ENDPOINTS = [
   '/api/health',
   '/api/ai-status',
+  '/api/rag-config',        // RAG service configuration (read-only for demo)
+  '/api/llm-integrations', // LLM integrations (read-only for demo)
 ];
 
 /**

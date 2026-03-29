@@ -22,7 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateRequest } from "@/lib/auth-middleware";
+import { authenticateRequest, checkPermission } from "@/lib/auth-middleware";
 import { logAuditEvent, calculateRetainUntil } from "@/lib/audit-service";
 
 // Python FHIR Service URL
@@ -231,7 +231,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   // Check for fhir:write permission
-  if (!authResult.user!.permissions.includes("fhir:write")) {
+  if (!checkPermission(authResult.user!, "clinical_order:write")) {
     return NextResponse.json(
       {
         resourceType: "OperationOutcome",
@@ -334,7 +334,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 
   // Check for fhir:write permission
-  if (!authResult.user!.permissions.includes("fhir:write")) {
+  if (!checkPermission(authResult.user!, "clinical_order:write")) {
     return NextResponse.json(
       {
         resourceType: "OperationOutcome",
@@ -439,7 +439,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 
   // Check for fhir:delete permission
-  if (!authResult.user!.permissions.includes("fhir:delete")) {
+  if (!checkPermission(authResult.user!, "patient:delete")) {
     return NextResponse.json(
       {
         resourceType: "OperationOutcome",

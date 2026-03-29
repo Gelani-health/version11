@@ -39,7 +39,8 @@ export type AuditResourceType =
   | 'NurseTask'
   | 'Employee'
   | 'LabResult'
-  | 'Imaging';
+  | 'Imaging'
+  | 'FHIR';
 
 export type AuditOutcome = 'SUCCESS' | 'FAILURE' | 'DENIED';
 
@@ -466,6 +467,7 @@ function mapResourceToLegacy(resourceType: AuditResourceType): string {
     Employee: 'employee',
     LabResult: 'lab_result',
     Imaging: 'imaging',
+    FHIR: 'fhir',
   };
   return mapping[resourceType] || resourceType.toLowerCase();
 }
@@ -667,6 +669,7 @@ export function formatResourceType(resourceType: LegacyAuditResourceType | Audit
     Employee: 'Employee Record',
     LabResult: 'Lab Result',
     Imaging: 'Imaging',
+    FHIR: 'FHIR Resource',
     patient: 'Patient Record',
     soap_note: 'SOAP Note',
     vitals: 'Vital Signs',
@@ -676,6 +679,7 @@ export function formatResourceType(resourceType: LegacyAuditResourceType | Audit
     nurse_task: 'Nurse Task',
     audit_log: 'Audit Log',
     diagnostic: 'Diagnostic Report',
+    fhir: 'FHIR Resource',
   };
   return resourceMap[resourceType] || resourceType;
 }

@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
   const user = authResult.user!;
 
   // Permission check - only ADMIN role
-  if (!checkPermission(user, 'admin:read') && user.role !== 'ADMIN') {
+  if (user.role !== 'admin') {
     await logAuditEvent({
       action: 'READ',
       resourceType: 'AuditLog',
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
   const user = authResult.user!;
 
   // Permission check - only ADMIN role
-  if (!checkPermission(user, 'admin:write') && user.role !== 'ADMIN') {
+  if (!checkPermission(user, 'employee:write') && user.role !== 'admin') {
     await logAuditEvent({
       action: 'DELETE',
       resourceType: 'AuditLog',

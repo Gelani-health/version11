@@ -32,17 +32,6 @@ import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions'
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 import { logger } from './lib/logger';
 
-// Version from package.json
-const getVersion = (): string => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pkg = require('./package.json');
-    return pkg.version || '2.0.0';
-  } catch {
-    return '2.0.0';
-  }
-};
-
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
@@ -50,7 +39,7 @@ const getVersion = (): string => {
 const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'gelani-nextjs';
 const OTEL_ENVIRONMENT = process.env.OTEL_ENVIRONMENT || 'development';
 const OTEL_EXPORTER_OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces';
-const SERVICE_VERSION = getVersion();
+const SERVICE_VERSION = '2.0.0';
 
 // =============================================================================
 // SDK INITIALIZATION
@@ -426,23 +415,6 @@ export function recordSpanError(error: Error): void {
       message: error.message,
     });
   }
-}
-
-// =============================================================================
-// SIGTERM HANDLER
-// =============================================================================
-
-// Register graceful shutdown on SIGTERM
-if (typeof process !== 'undefined') {
-  process.on('SIGTERM', async () => {
-    logger.info('Received SIGTERM, shutting down OpenTelemetry...');
-    await shutdownTelemetry();
-  });
-
-  process.on('SIGINT', async () => {
-    logger.info('Received SIGINT, shutting down OpenTelemetry...');
-    await shutdownTelemetry();
-  });
 }
 
 // =============================================================================

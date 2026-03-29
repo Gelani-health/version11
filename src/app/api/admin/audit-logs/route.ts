@@ -131,11 +131,11 @@ export async function GET(request: NextRequest) {
       },
       action: {
         type: log.actionType,
-        formatted: formatActionType(log.actionType),
+        formatted: formatActionType(log.actionType as any),
       },
       resource: {
         type: log.resourceType,
-        formatted: formatResourceType(log.resourceType),
+        formatted: formatResourceType(log.resourceType as any),
         id: log.resourceId,
       },
       patient: {

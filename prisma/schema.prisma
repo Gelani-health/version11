@@ -1134,7 +1134,8 @@ model ClinicalOrder {
   id           String    @id @default(uuid())
   soapNoteId   String?
   patientId    String
-  orderType    String     // lab, imaging, procedure, referral
+  orderType    String     // lab, imaging, procedure, referral, screening
+  orderCategory String?   // cancer, cardiovascular, infectious, metabolic, etc.
   orderName    String    
   orderDetails String?
   urgency      String    @default("routine") // routine, urgent, stat
@@ -1151,6 +1152,7 @@ model ClinicalOrder {
   @@index([patientId])
   @@index([status])
   @@index([orderType])
+  @@index([orderCategory])
   @@map("clinical_orders")
 }
 
@@ -1186,7 +1188,7 @@ model Prescription {
 /// Nurse Tasks (from doctor's instructions)
 model NurseTask {
   id              String    @id @default(uuid())
-  soapNoteId      String
+  soapNoteId      String?
   patientId       String
   taskDescription String    
   priority        String    @default("routine") // routine, urgent, stat
@@ -1201,7 +1203,7 @@ model NurseTask {
   assignee        Employee? @relation("NurseTasksByAssignee", fields: [assignedTo], references: [employeeId])
   assigner        Employee  @relation("NurseTasksByAssigner", fields: [assignedBy], references: [employeeId])
   patient         Patient   @relation(fields: [patientId], references: [id])
-  soapNote        SoapNote  @relation(fields: [soapNoteId], references: [id])
+  soapNote        SoapNote? @relation(fields: [soapNoteId], references: [id])
 
   @@index([patientId])
   @@index([status])

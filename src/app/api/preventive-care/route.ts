@@ -124,10 +124,10 @@ export async function POST(request: NextRequest) {
           notes,
         }),
         status: 'ordered',
-        priority: screening.grade === 'A' ? 'urgent' : 'routine',
+        urgency: screening.grade === 'A' ? 'urgent' : 'routine',
         orderedBy: orderedBy || 'system',
         orderedAt: new Date(),
-      } as any,
+      },
     });
 
     return NextResponse.json({

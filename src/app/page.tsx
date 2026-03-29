@@ -28,7 +28,8 @@ import {
   Globe,
   Moon,
   Sun,
-  FlaskConical
+  FlaskConical,
+  ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +82,7 @@ import { RAGIndicator } from "@/components/rag-indicator";
 import { RAGSettings } from "@/components/rag-settings";
 import { UnifiedLabModule } from "@/components/unified-lab-module";
 import { UnifiedImagingModule } from "@/components/unified-imaging-module";
+import NurseTaskWorkflow from "@/components/nurse-task-workflow";
 
 // Import role-based access
 import { useRoleBasedAccess, getVisibleModules } from "@/hooks/use-role-based-access";
@@ -137,6 +139,7 @@ const allSidebarItems = [
   { id: "smart-identity", label: "Smart Identity", icon: Shield, permission: 'patient:read' as Permission },
   { id: "patients", label: "Patients", icon: Users, permission: 'patient:read' as Permission },
   { id: "consultations", label: "Consultations", icon: Stethoscope, permission: 'clinical_order:read' as Permission },
+  { id: "nurse-tasks", label: "Nurse Tasks", icon: ClipboardList, permission: 'nurse_task:read' as Permission },
   { id: "clinical-intelligence", label: "Clinical Intelligence", icon: Brain, permission: 'ai:use' as Permission },
   { id: "healthcare-ai", label: "Healthcare AI", icon: Sparkles, permission: 'ai:use' as Permission },
   { id: "documentation", label: "Documentation", icon: FileText, permission: 'soap_note:read' as Permission },
@@ -204,6 +207,8 @@ export default function AIHealthcareDashboard() {
         return <PatientManagement onNavigate={handleNavigate} />;
       case "consultations":
         return <ClinicalWorkflowDashboard preselectedPatientId={selectedPatientId} />;
+      case "nurse-tasks":
+        return <NurseTaskWorkflow />;
       case "clinical-intelligence":
         return <ClinicalIntelligence preselectedPatientId={selectedPatientId} />;
       case "healthcare-ai":

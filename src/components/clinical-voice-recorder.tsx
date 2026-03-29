@@ -333,6 +333,7 @@ export function ClinicalVoiceRecorder({
             whileTap={{ scale: 0.95 }}
             onClick={isRecording ? stopRecording : startRecording}
             disabled={isProcessing}
+            suppressHydrationWarning
             className={`
               relative w-12 h-12 rounded-full flex items-center justify-center
               ${isRecording
@@ -421,6 +422,7 @@ export function ClinicalVoiceRecorder({
             whileTap={{ scale: 0.95 }}
             onClick={isRecording ? stopRecording : startRecording}
             disabled={isProcessing}
+            suppressHydrationWarning
             className={`
               relative w-20 h-20 rounded-full flex items-center justify-center
               ${isRecording

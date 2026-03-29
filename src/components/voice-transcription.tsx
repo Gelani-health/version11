@@ -438,6 +438,7 @@ export function VoiceTranscription({ preselectedPatientId }: { preselectedPatien
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={isRecording ? handleStopRecording : handleStartRecording}
+                suppressHydrationWarning
                 className={`
                   relative w-24 h-24 rounded-full flex items-center justify-center
                   ${isRecording

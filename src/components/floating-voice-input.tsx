@@ -72,6 +72,7 @@ export function FloatingVoiceInput({
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
+            suppressHydrationWarning
             className={cn(
               "fixed z-50 w-14 h-14 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg flex items-center justify-center hover:shadow-xl transition-shadow",
               positionClasses[position]

@@ -355,6 +355,7 @@ export default function AIHealthcareDashboard() {
                     `}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    suppressHydrationWarning
                   >
                     <Icon className="h-5 w-5" />
                     {item.label}
@@ -391,6 +392,7 @@ export default function AIHealthcareDashboard() {
                       `}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
+                      suppressHydrationWarning
                     >
                       <Icon className="h-5 w-5" />
                       {item.label}

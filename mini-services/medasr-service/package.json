@@ -1,0 +1,14 @@
+{
+  "name": "medasr-service",
+  "version": "1.0.0",
+  "description": "MedASR - Medical Automated Speech Recognition Service",
+  "type": "module",
+  "scripts": {
+    "dev": "python index.py",
+    "start": "python index.py",
+    "install-deps": "pip install -r requirements.txt"
+  },
+  "keywords": ["asr", "speech-recognition", "medical", "healthcare"],
+  "author": "MedASR Team",
+  "license": "MIT"
+}

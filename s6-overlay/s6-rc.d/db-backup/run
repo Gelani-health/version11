@@ -1,0 +1,73 @@
+#!/bin/sh
+# Database Backup Service
+# Periodic backup service for SQLite database
+# Runs every hour by default
+
+echo "[db-backup] Starting scheduled database backup service..."
+
+# Wait for init-first to complete
+if [ -f "/run/s6/basedir/env/SERVICE_READY" ]; then
+    echo "[db-backup] ✅ Init complete, starting backup scheduler"
+fi
+
+# Configuration
+DB_PATH="${DB_PATH:-/app/data/healthcare.db}"
+BACKUP_DIR="${BACKUP_DIR:-/app/data/backups}"
+BACKUP_INTERVAL="${BACKUP_INTERVAL:-3600}"  # 1 hour default
+
+echo "[db-backup] Database: ${DB_PATH}"
+echo "[db-backup] Backup directory: ${BACKUP_DIR}"
+echo "[db-backup] Interval: ${BACKUP_INTERVAL}s"
+
+# Ensure backup directory exists
+mkdir -p "${BACKUP_DIR}"
+
+# Function to create backup
+create_backup() {
+    if [ ! -f "${DB_PATH}" ]; then
+        echo "[db-backup] ⚠️ Database not found: ${DB_PATH}"
+        return 1
+    fi
+    
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    BACKUP_FILE="${BACKUP_DIR}/backup-${TIMESTAMP}.db"
+    
+    # Force WAL checkpoint before backup
+    sqlite3 "${DB_PATH}" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+    
+    # Create backup
+    cp "${DB_PATH}" "${BACKUP_FILE}"
+    
+    # Copy WAL and SHM files if they exist
+    if [ -f "${DB_PATH}-wal" ]; then
+        cp "${DB_PATH}-wal" "${BACKUP_FILE}-wal"
+    fi
+    if [ -f "${DB_PATH}-shm" ]; then
+        cp "${DB_PATH}-shm" "${BACKUP_FILE}-shm"
+    fi
+    
+    BACKUP_SIZE=$(stat -c%s "${BACKUP_FILE}" 2>/dev/null || stat -f%z "${BACKUP_FILE}" 2>/dev/null || echo "0")
+    echo "[db-backup] ✅ Backup created: ${BACKUP_FILE} (${BACKUP_SIZE} bytes)"
+    
+    # Cleanup old backups (keep last 20)
+    cd "${BACKUP_DIR}"
+    BACKUP_COUNT=$(ls -1 backup-*.db 2>/dev/null | wc -l)
+    if [ "${BACKUP_COUNT}" -gt 20 ]; then
+        ls -1t backup-*.db | tail -n +21 | xargs rm -f 2>/dev/null || true
+        echo "[db-backup] Cleaned up old backups"
+    fi
+    
+    return 0
+}
+
+# Create initial backup
+echo "[db-backup] Creating initial backup..."
+create_backup
+
+# Run backup loop
+echo "[db-backup] Starting backup loop..."
+while true; do
+    sleep "${BACKUP_INTERVAL}"
+    echo "[db-backup] Running scheduled backup..."
+    create_backup
+done

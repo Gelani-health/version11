@@ -1,0 +1,27 @@
+#!/bin/sh
+# Medical RAG Service - PubMed/PMC-powered diagnostic RAG
+# Port: 3031
+# Dependencies: init-first only (standalone - external deps only: Pinecone, NCBI, Z.AI)
+
+echo "[s6-medical-rag] Starting Medical RAG service..."
+
+cd /app/mini-services/medical-rag-service
+
+# Set environment
+export PORT="${MEDICAL_RAG_PORT:-3031}"
+export PINECONE_API_KEY="${PINECONE_API_KEY:-}"
+export PINECONE_INDEX_NAME="${PINECONE_INDEX_NAME:-medical-diagnostic-rag}"
+export PINECONE_NAMESPACE="${PINECONE_NAMESPACE:-pubmed}"
+export ZAI_API_KEY="${ZAI_API_KEY:-}"
+export NCBI_API_KEY="${NCBI_API_KEY:-}"
+export NCBI_EMAIL="${NCBI_EMAIL:-info@gelani-health.ai}"
+export GLM_MODEL="${GLM_MODEL:-glm-4.7-flash}"
+
+# Check if dependencies are ready
+if [ -f "/run/s6/basedir/env/SERVICE_READY" ]; then
+    echo "[s6-medical-rag] ✅ Init complete, starting service"
+fi
+
+echo "[s6-medical-rag] Starting uvicorn on port ${PORT}..."
+echo "[s6-medical-rag] External dependencies: Pinecone, NCBI, Z.AI"
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1

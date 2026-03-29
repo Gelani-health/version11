@@ -1,0 +1,35 @@
+# Gelani Mini-Services - Stub Dockerfile
+# Lightweight FastAPI services for development/preview
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    fastapi==0.109.2 \
+    uvicorn[standard]==0.27.1 \
+    pydantic==2.6.1 \
+    pydantic-settings==2.1.0 \
+    httpx==0.26.0
+
+# Copy stub scripts
+COPY stub_medical_rag.py ./stub_medical_rag.py
+COPY stub_langchain_rag.py ./stub_langchain_rag.py
+COPY stub_medasr.py ./stub_medasr.py
+
+# Create non-root user
+RUN useradd -m -u 1000 gelani && chown -R gelani:gelani /app
+USER gelani
+
+# Health check (generic, overridden by service-specific settings)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-3031}/health || exit 1
+
+# Default command (overridden by docker-compose)
+CMD ["python", "stub_medical_rag.py"]

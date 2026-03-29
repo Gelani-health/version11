@@ -1,0 +1,15 @@
+{
+  "name": "medical-rag-service",
+  "version": "1.0.0",
+  "description": "Medical Diagnostic RAG Service with PubMed/PMC and Pinecone",
+  "scripts": {
+    "dev": "bun --hot index.py",
+    "start": "python index.py",
+    "install-deps": "pip install -r requirements.txt",
+    "test": "pytest tests/ -v --cov=app --cov-report=term-missing",
+    "lint": "ruff check app/",
+    "format": "black app/"
+  },
+  "type": "module",
+  "port": 3031
+}

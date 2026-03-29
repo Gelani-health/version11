@@ -1,0 +1,20 @@
+[project]
+name = "langchain-rag-service"
+version = "1.0.0"
+description = "LangChain RAG Service with READ/WRITE and Smart Sync"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "httpx>=0.26.0",
+    "loguru>=0.7.2",
+    "pinecone>=3.0.0",
+    "sentence-transformers>=2.3.1",
+    "numpy>=1.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

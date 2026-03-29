@@ -1,0 +1,34 @@
+#!/bin/sh
+# LangChain RAG Service - Document management RAG with READ/WRITE
+# Port: 3032
+# Dependencies: medical-rag (for sync, hybrid queries, BM25)
+
+echo "[s6-langchain-rag] Starting LangChain RAG service..."
+
+# Wait for Medical RAG dependency
+echo "[s6-langchain-rag] Waiting for Medical RAG to be ready..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3031/health > /dev/null 2>&1; then
+        echo "[s6-langchain-rag] ✅ Medical RAG is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "[s6-langchain-rag] ⚠️ Medical RAG not ready after 30s, starting anyway"
+    fi
+    sleep 1
+done
+
+cd /app/mini-services/langchain-rag-service
+
+# Set environment
+export PORT="${LANGCHAIN_RAG_PORT:-3032}"
+export PINECONE_API_KEY="${PINECONE_API_KEY:-}"
+export PINECONE_INDEX_NAME="${PINECONE_INDEX_NAME:-medical-diagnostic-rag}"
+export PINECONE_NAMESPACE="${PINECONE_NAMESPACE:-pubmed}"
+export ZAI_API_KEY="${ZAI_API_KEY:-}"
+export CUSTOM_RAG_URL="${CUSTOM_RAG_URL:-http://localhost:3031}"
+export GLM_MODEL="${GLM_MODEL:-glm-4.7-flash}"
+
+echo "[s6-langchain-rag] Starting uvicorn on port ${PORT}..."
+echo "[s6-langchain-rag] Connected to Medical RAG at: ${CUSTOM_RAG_URL}"
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1

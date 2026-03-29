@@ -1,0 +1,135 @@
+{
+  "summary": {
+    "total": 10,
+    "passed": 9,
+    "failed": 1,
+    "pass_rate": 90.0
+  },
+  "critical_criteria": {
+    "GLM 4.7 Flash": true,
+    "Specialties": true,
+    "Scheduler": true,
+    "Error Handling": true,
+    "Audit Logging": true
+  },
+  "results": [
+    {
+      "test_name": "Health Check",
+      "passed": true,
+      "details": "Service status: healthy",
+      "metrics": {
+        "latency_ms": 7.55,
+        "pinecone": "configured",
+        "llm": "configured"
+      },
+      "timestamp": "2026-03-13T16:20:09.450894"
+    },
+    {
+      "test_name": "Specialties Endpoint",
+      "passed": true,
+      "details": "Found 12 specialties",
+      "metrics": {
+        "total": 12,
+        "has_cardiology": true,
+        "has_neurology": true
+      },
+      "timestamp": "2026-03-13T16:20:09.452958"
+    },
+    {
+      "test_name": "Scheduler Status",
+      "passed": true,
+      "details": "Latency metrics available",
+      "metrics": {
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "running": false
+      },
+      "timestamp": "2026-03-13T16:20:09.464068"
+    },
+    {
+      "test_name": "GLM 4.7 Flash Diagnostic",
+      "passed": true,
+      "details": "Generated 5 diagnoses",
+      "metrics": {
+        "latency_ms": 50987.09,
+        "model": "glm-4.7-flash",
+        "top_diagnosis": "Acute Coronary Syndrome (Unstable Angina, NSTEMI, or STEMI)",
+        "top_probability": 0.85,
+        "confidence_level": "high"
+      },
+      "timestamp": "2026-03-13T16:21:00.451366"
+    },
+    {
+      "test_name": "GLM 4.7 Flash Diagnostic",
+      "passed": true,
+      "details": "Generated 4 diagnoses",
+      "metrics": {
+        "latency_ms": 66531.15,
+        "model": "glm-4.7-flash",
+        "top_diagnosis": "Community-Acquired Pneumonia (CAP)",
+        "top_probability": 0.75,
+        "confidence_level": "high"
+      },
+      "timestamp": "2026-03-13T16:22:06.982693"
+    },
+    {
+      "test_name": "Query Latency (Multiple)",
+      "passed": false,
+      "details": "Average: 65415ms, P95: 108765ms",
+      "metrics": {
+        "requests": 5,
+        "avg_ms": 65414.85,
+        "p50_ms": 58698.53,
+        "p95_ms": 108764.81,
+        "min_ms": 40534.43,
+        "max_ms": 108764.81
+      },
+      "timestamp": "2026-03-13T16:27:34.057270"
+    },
+    {
+      "test_name": "Citation Format",
+      "passed": true,
+      "details": "Citations: 0, ICD-10 codes: True",
+      "metrics": {
+        "citations_count": 0,
+        "diagnoses_count": 5,
+        "has_icd10_codes": true
+      },
+      "timestamp": "2026-03-13T16:28:56.130284"
+    },
+    {
+      "test_name": "Error Handling",
+      "passed": true,
+      "details": "Passed 3/3 error tests",
+      "metrics": {
+        "tests_passed": 3,
+        "tests_total": 3
+      },
+      "timestamp": "2026-03-13T16:28:56.175624"
+    },
+    {
+      "test_name": "Audit Logging",
+      "passed": true,
+      "details": "Audit logging: enabled",
+      "metrics": {
+        "audit_logging": true,
+        "log_level": "INFO"
+      },
+      "timestamp": "2026-03-13T16:28:56.379534"
+    },
+    {
+      "test_name": "Diagnostic Stats",
+      "passed": true,
+      "details": "Stats endpoint accessible",
+      "metrics": {
+        "total_requests": 8,
+        "total_tokens": 23815,
+        "total_errors": 4,
+        "avg_latency_ms": 65810.55837869644
+      },
+      "timestamp": "2026-03-13T16:28:56.381476"
+    }
+  ],
+  "timestamp": "2026-03-13T16:28:56.381603"
+}

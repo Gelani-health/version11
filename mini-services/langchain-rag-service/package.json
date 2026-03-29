@@ -1,0 +1,15 @@
+{
+  "name": "langchain-rag-service",
+  "version": "1.0.0",
+  "description": "LangChain RAG Service with READ/WRITE and Smart Sync",
+  "scripts": {
+    "dev": "bun --hot index.py",
+    "start": "python index.py",
+    "lint": "ruff check .",
+    "format": "black ."
+  },
+  "service": {
+    "port": 3032,
+    "mode": "READ_WRITE"
+  }
+}

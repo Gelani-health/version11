@@ -1,0 +1,177 @@
+# Gelani Healthcare Platform - Docker Compose
+# Complete stack for development and production preview
+#
+# Usage:
+#   Development: docker compose up -d
+#   Production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  # ============================================
+  # Main Next.js Application
+  # ============================================
+  gelani-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gelani-main
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/healthcare.db
+      - MEDICAL_RAG_SERVICE_URL=http://medical-rag:3031
+      - LANGCHAIN_RAG_SERVICE_URL=http://langchain-rag:3032
+      - MEDASR_SERVICE_URL=http://medasr:3033
+      - GELANI_API_KEY=${GELANI_API_KEY}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-gelani-healthcare-secret}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - ZAI_API_KEY=${ZAI_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+    volumes:
+      - gelani-data:/app/data
+      - gelani-logs:/app/logs
+    depends_on:
+      medical-rag:
+        condition: service_healthy
+      langchain-rag:
+        condition: service_healthy
+      medasr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - gelani-network
+
+  # ============================================
+  # Medical RAG Service (Port 3031)
+  # PubMed/PMC-powered medical diagnostic RAG
+  # ============================================
+  medical-rag:
+    build:
+      context: ./mini-services/medical-rag-service
+      dockerfile: Dockerfile
+    container_name: gelani-medical-rag
+    ports:
+      - "3031:3031"
+    environment:
+      - PORT=3031
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-medical-diagnostic-rag}
+      - PINECONE_NAMESPACE=${PINECONE_NAMESPACE:-pubmed}
+      - ZAI_API_KEY=${ZAI_API_KEY}
+      - GLM_MODEL=${GLM_MODEL:-glm-4.7-flash}
+      - NCBI_API_KEY=${NCBI_API_KEY}
+      - NCBI_EMAIL=${NCBI_EMAIL:-info@gelani-health.ai}
+    volumes:
+      - medical-rag-models:/app/models
+      - medical-rag-cache:/app/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3031/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - gelani-network
+
+  # ============================================
+  # LangChain RAG Service (Port 3032)
+  # Document management RAG with READ/WRITE
+  # ============================================
+  langchain-rag:
+    build:
+      context: ./mini-services/langchain-rag-service
+      dockerfile: Dockerfile
+    container_name: gelani-langchain-rag
+    ports:
+      - "3032:3032"
+    environment:
+      - PORT=3032
+      - MODE=READ_WRITE
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-medical-diagnostic-rag}
+      - PINECONE_NAMESPACE=${PINECONE_NAMESPACE:-pubmed}
+      - ZAI_API_KEY=${ZAI_API_KEY}
+      - GLM_MODEL=${GLM_MODEL:-glm-4.7-flash}
+    volumes:
+      - langchain-rag-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3032/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - gelani-network
+
+  # ============================================
+  # MedASR Service (Port 3033)
+  # Medical speech recognition
+  # ============================================
+  medasr:
+    build:
+      context: ./mini-services/medasr-service
+      dockerfile: Dockerfile
+    container_name: gelani-medasr
+    ports:
+      - "3033:3033"
+    environment:
+      - PORT=3033
+      - MODEL_CACHE_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - medasr-models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3033/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - gelani-network
+
+  # ============================================
+  # Cloudflare Tunnel (Public Preview URL)
+  # ============================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gelani-tunnel
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      gelani-app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - gelani-network
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  gelani-network:
+    driver: bridge
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  gelani-data:
+    driver: local
+  gelani-logs:
+    driver: local
+  medical-rag-models:
+    driver: local
+  medical-rag-cache:
+    driver: local
+  langchain-rag-data:
+    driver: local
+  medasr-models:
+    driver: local

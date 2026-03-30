@@ -113,7 +113,10 @@ export type LegacyAuditResourceType =
   | 'employee'
   | 'nurse_task' 
   | 'audit_log'
-  | 'diagnostic';
+  | 'diagnostic'
+  | 'lab_result'
+  | 'imaging'
+  | 'fhir';
 
 export interface AuditLogInput {
   actorId: string;

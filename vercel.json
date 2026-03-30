@@ -4,10 +4,5 @@
   "installCommand": "bun install",
   "framework": "nextjs",
   "outputDirectory": ".next",
-  "regions": ["iad1"],
-  "env": {
-    "DATABASE_URL": "@database_url",
-    "NEXTAUTH_SECRET": "@nextauth_secret",
-    "ENCRYPTION_KEY": "@encryption_key"
-  }
+  "regions": ["iad1"]
 }

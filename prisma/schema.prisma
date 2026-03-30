@@ -1233,6 +1233,16 @@ model AuditLog {
   metadata        String?  // JSON metadata (PROMPT 11)
   retainUntil     DateTime? // Retention date (7 years from creation) (PROMPT 11)
   timestamp       DateTime  @default(now())
+  
+  // HIPAA Compliance Fields
+  userId          String?   // User ID for audit trail
+  userRole        String?   // Role at time of action
+  sessionId       String?   // Session identifier
+  phiAccessed     Boolean   @default(false) // Whether PHI was accessed
+  phiFields       String?   // JSON array of PHI fields accessed
+  integrityHash   String?   // Cryptographic hash for chain integrity
+  createdAt       DateTime  @default(now())
+  
   actor           Employee  @relation(fields: [actorId], references: [employeeId])
 
   @@index([actorId])
@@ -1242,6 +1252,10 @@ model AuditLog {
   @@index([timestamp])
   @@index([outcome])
   @@index([retainUntil])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([phiAccessed])
+  @@index([createdAt])
   @@map("audit_logs")
 }
 

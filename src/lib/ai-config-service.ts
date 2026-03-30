@@ -2,16 +2,19 @@
  * AI Configuration Service
  * =========================
  * 
- * Provides persistent AI configurations (LLM, RAG, ASR) that work in both
- * persistent (local/Docker) and ephemeral (Vercel serverless) environments.
+ * Provides persistent AI configurations (LLM, RAG, ASR) for the
+ * Gelani Healthcare Assistant - World-Class Clinical Decision Support System.
  * 
  * Key Features:
  * - Environment-based default configurations
- * - Database-backed persistence when available
+ * - Database-backed persistence with SQLite
  * - Automatic fallback to built-in defaults
- * - Z.AI SDK integration (always available)
+ * - Multiple LLM provider support (OpenAI, Anthropic, Google, Z.AI, Ollama)
+ * - Medical-optimized settings
  * 
  * HIPAA Compliance: API keys are stored encrypted when persisted
+ * 
+ * @module ai-config-service
  */
 
 import { db } from './db';
@@ -56,15 +59,16 @@ export interface RAGConfig {
 // ============================================================================
 
 const DEFAULT_LLM_CONFIGS: LLMConfig[] = [
+  // Z.AI GLM-4.7-Flash - Primary LLM (Built-in SDK)
   {
     id: 'default-zai-glm4-flash',
     provider: 'zai',
-    displayName: 'Z.ai GLM-4.7-Flash',
+    displayName: 'Z.ai GLM-4.7-Flash (Recommended)',
     baseUrl: 'https://api.z.ai/api/paas/v4',
     model: 'GLM-4.7-Flash',
     isActive: true,
     isDefault: true,
-    priority: 10,
+    priority: 100,
     settings: {
       contextWindow: 200000,
       maxTokens: 4096,
@@ -72,10 +76,13 @@ const DEFAULT_LLM_CONFIGS: LLMConfig[] = [
       supportsThinking: true,
       supportsStructuredOutput: true,
       supportsVision: true,
+      supportsFunctionCalling: true,
+      costPer1kTokens: 0.001,
     },
     connectionStatus: 'connected',
-    notes: 'Primary LLM - Z.AI SDK built-in. 200K context, vision capable, superior multi-step reasoning.',
+    notes: 'Primary LLM - Built-in Z.AI SDK. 200K context window, vision capable, superior clinical reasoning. Best for medical diagnosis support.',
   },
+  // Z.AI GLM-4-Plus - Fallback
   {
     id: 'default-zai-glm4-plus',
     provider: 'zai',
@@ -84,26 +91,195 @@ const DEFAULT_LLM_CONFIGS: LLMConfig[] = [
     model: 'GLM-4-Plus',
     isActive: true,
     isDefault: false,
-    priority: 5,
+    priority: 90,
     settings: {
       contextWindow: 128000,
       maxTokens: 4096,
-      temperature: 0.7,
+      temperature: 0.5,
       supportsStructuredOutput: true,
+      supportsFunctionCalling: true,
+      costPer1kTokens: 0.002,
     },
     connectionStatus: 'connected',
-    notes: 'Fallback LLM - 128K context, general purpose',
+    notes: 'Secondary Z.AI model - 128K context, enhanced reasoning for complex cases.',
+  },
+  // OpenAI GPT-4o - Recommended External
+  {
+    id: 'default-openai-gpt4o',
+    provider: 'openai',
+    displayName: 'OpenAI GPT-4o',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+    isActive: false,
+    isDefault: false,
+    priority: 80,
+    settings: {
+      contextWindow: 128000,
+      maxTokens: 4096,
+      temperature: 0.3,
+      supportsVision: true,
+      supportsFunctionCalling: true,
+      supportsStructuredOutput: true,
+      costPer1kTokens: 0.005,
+    },
+    connectionStatus: 'untested',
+    notes: 'OpenAI GPT-4o - Excellent for clinical documentation. Requires OPENAI_API_KEY.',
+  },
+  // OpenAI GPT-4 Turbo
+  {
+    id: 'default-openai-gpt4-turbo',
+    provider: 'openai',
+    displayName: 'OpenAI GPT-4 Turbo',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4-turbo',
+    isActive: false,
+    isDefault: false,
+    priority: 75,
+    settings: {
+      contextWindow: 128000,
+      maxTokens: 4096,
+      temperature: 0.3,
+      supportsVision: true,
+      supportsFunctionCalling: true,
+      costPer1kTokens: 0.01,
+    },
+    connectionStatus: 'untested',
+    notes: 'OpenAI GPT-4 Turbo - Strong clinical reasoning capabilities.',
+  },
+  // Anthropic Claude 3.5 Sonnet
+  {
+    id: 'default-anthropic-claude-35-sonnet',
+    provider: 'claude',
+    displayName: 'Anthropic Claude 3.5 Sonnet',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-3-5-sonnet-20241022',
+    isActive: false,
+    isDefault: false,
+    priority: 85,
+    settings: {
+      contextWindow: 200000,
+      maxTokens: 8192,
+      temperature: 0.3,
+      supportsVision: true,
+      supportsFunctionCalling: true,
+      costPer1kTokens: 0.003,
+    },
+    connectionStatus: 'untested',
+    notes: 'Claude 3.5 Sonnet - Excellent for clinical analysis and documentation. Requires ANTHROPIC_API_KEY.',
+  },
+  // Anthropic Claude 3 Opus
+  {
+    id: 'default-anthropic-claude-3-opus',
+    provider: 'claude',
+    displayName: 'Anthropic Claude 3 Opus',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-3-opus-20240229',
+    isActive: false,
+    isDefault: false,
+    priority: 70,
+    settings: {
+      contextWindow: 200000,
+      maxTokens: 4096,
+      temperature: 0.3,
+      supportsVision: true,
+      costPer1kTokens: 0.015,
+    },
+    connectionStatus: 'untested',
+    notes: 'Claude 3 Opus - Highest quality reasoning, best for complex differential diagnosis.',
+  },
+  // Google Gemini 1.5 Pro
+  {
+    id: 'default-google-gemini-15-pro',
+    provider: 'gemini',
+    displayName: 'Google Gemini 1.5 Pro',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1',
+    model: 'gemini-1.5-pro',
+    isActive: false,
+    isDefault: false,
+    priority: 65,
+    settings: {
+      contextWindow: 1000000,
+      maxTokens: 8192,
+      temperature: 0.3,
+      supportsVision: true,
+      supportsFunctionCalling: true,
+      costPer1kTokens: 0.0035,
+    },
+    connectionStatus: 'untested',
+    notes: 'Gemini 1.5 Pro - Massive 1M context window. Great for comprehensive patient history analysis. Requires GOOGLE_API_KEY.',
+  },
+  // Google Gemini 1.5 Flash
+  {
+    id: 'default-google-gemini-15-flash',
+    provider: 'gemini',
+    displayName: 'Google Gemini 1.5 Flash',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1',
+    model: 'gemini-1.5-flash',
+    isActive: false,
+    isDefault: false,
+    priority: 60,
+    settings: {
+      contextWindow: 1000000,
+      maxTokens: 8192,
+      temperature: 0.3,
+      supportsVision: true,
+      costPer1kTokens: 0.00035,
+    },
+    connectionStatus: 'untested',
+    notes: 'Gemini 1.5 Flash - Fast and cost-effective with large context.',
+  },
+  // Ollama Llama 3.1 - Local Deployment
+  {
+    id: 'default-ollama-llama31',
+    provider: 'ollama',
+    displayName: 'Ollama Llama 3.1 70B (Local)',
+    baseUrl: 'http://localhost:11434',
+    model: 'llama3.1:70b',
+    isActive: false,
+    isDefault: false,
+    priority: 50,
+    settings: {
+      contextWindow: 128000,
+      maxTokens: 4096,
+      temperature: 0.3,
+      isLocal: true,
+      costPer1kTokens: 0,
+    },
+    connectionStatus: 'untested',
+    notes: 'Llama 3.1 70B via Ollama - Local deployment, no API costs. Requires Ollama installation and model download.',
+  },
+  // Ollama MedLlama2 - Medical Fine-tuned
+  {
+    id: 'default-ollama-medllama2',
+    provider: 'ollama',
+    displayName: 'Ollama MedLlama2 (Local)',
+    baseUrl: 'http://localhost:11434',
+    model: 'medllama2',
+    isActive: false,
+    isDefault: false,
+    priority: 45,
+    settings: {
+      contextWindow: 4096,
+      maxTokens: 2048,
+      temperature: 0.3,
+      isLocal: true,
+      isMedicalFineTuned: true,
+      costPer1kTokens: 0,
+    },
+    connectionStatus: 'untested',
+    notes: 'MedLlama2 via Ollama - Medical domain fine-tuned model for local deployment.',
   },
 ];
 
 const DEFAULT_RAG_CONFIGS: RAGConfig[] = [
+  // Primary Medical RAG - Embedded Knowledge
   {
-    id: 'default-medical-rag',
-    serviceName: 'medical-rag',
-    displayName: 'Medical RAG (Z.AI SDK)',
-    description: 'Medical diagnostic RAG powered by Z.AI SDK with PubMedBERT embeddings and clinical knowledge base',
-    serviceUrl: 'https://api.z.ai',
-    port: 443,
+    id: 'default-embedded-medical-rag',
+    serviceName: 'embedded-medical-rag',
+    displayName: 'Embedded Medical Knowledge RAG',
+    description: 'Primary RAG with embedded clinical guidelines, drug interactions, ICD-10 codes, and diagnostic knowledge. No external dependencies.',
+    serviceUrl: 'internal://embedded-knowledge',
+    port: 0,
     serviceType: 'rag',
     capabilities: [
       'query',
@@ -112,62 +288,130 @@ const DEFAULT_RAG_CONFIGS: RAGConfig[] = [
       'drug-interactions',
       'icd-coding',
       'differential-diagnosis',
+      'lab-interpretation',
+      'symptom-analysis',
+      'clinical-guidelines',
     ],
     isActive: true,
     isDefault: true,
-    priority: 10,
+    priority: 100,
+    settings: {
+      useEmbeddedKnowledge: true,
+      topK: 10,
+      minScore: 0.3,
+      embeddingModel: 'feature-based-semantic',
+      embeddingDimension: 768,
+      enableDrugInteractionCheck: true,
+      enableLabInterpretation: true,
+      enableDifferentialDiagnosis: true,
+    },
+    connectionStatus: 'connected',
+    notes: 'Primary RAG - Fully embedded medical knowledge base. Works offline, no external API calls needed.',
+  },
+  // Medical RAG Service (Python FastAPI)
+  {
+    id: 'default-medical-rag-service',
+    serviceName: 'medical-rag',
+    displayName: 'Medical RAG Service (Extended)',
+    description: 'Extended RAG service with PubMedBERT embeddings and vector search. Requires Python service.',
+    serviceUrl: 'http://localhost:3031',
+    port: 3031,
+    serviceType: 'rag',
+    capabilities: [
+      'query',
+      'diagnose',
+      'semantic-search',
+      'embeddings',
+      'vector-search',
+      'document-ingestion',
+      'pubmed-search',
+    ],
+    isActive: false,
+    isDefault: false,
+    priority: 50,
     settings: {
       topK: 50,
       minScore: 0.5,
       embeddingModel: 'NeuML/pubmedbert-base-embeddings',
       embeddingDimension: 768,
-      useBuiltInSDK: true,
+      useGPU: false,
     },
-    connectionStatus: 'connected',
-    notes: 'Primary RAG - Uses Z.AI SDK with built-in medical knowledge',
+    connectionStatus: 'untested',
+    notes: 'Extended RAG - Local Python service with PubMedBERT embeddings. Start with: npm run services:start',
   },
+  // LangChain RAG Service
   {
-    id: 'default-langchain-rag',
+    id: 'default-langchain-rag-service',
     serviceName: 'langchain-rag',
-    displayName: 'LangChain RAG (Extended)',
-    description: 'Extended RAG capabilities with document ingestion and custom knowledge support',
+    displayName: 'LangChain RAG Service',
+    description: 'LangChain-powered RAG with custom document ingestion and vector database support.',
     serviceUrl: 'http://localhost:3032',
     port: 3032,
     serviceType: 'rag',
-    capabilities: ['query', 'ingest', 'sync', 'batch-ingest', 'delete', 'custom-knowledge'],
-    isActive: true,
+    capabilities: [
+      'query',
+      'ingest',
+      'sync',
+      'batch-ingest',
+      'delete',
+      'custom-knowledge',
+      'pdf-processing',
+    ],
+    isActive: false,
     isDefault: false,
-    priority: 5,
+    priority: 40,
     settings: {
       topK: 50,
       minScore: 0.5,
       syncEnabled: true,
+      vectorDb: 'chromadb',
     },
     connectionStatus: 'untested',
-    notes: 'Extended RAG - Local service for custom document ingestion',
+    notes: 'LangChain RAG - For custom document ingestion and knowledge base management.',
   },
 ];
 
 const DEFAULT_ASR_CONFIGS: RAGConfig[] = [
+  // Z.AI ASR - Built-in
   {
     id: 'default-zai-asr',
     serviceName: 'zai-asr',
     displayName: 'Z.AI Speech Recognition',
-    description: 'Medical speech recognition powered by Z.AI SDK for clinical documentation',
+    description: 'Medical speech recognition powered by Z.AI SDK for clinical documentation.',
     serviceUrl: 'https://api.z.ai',
     port: 443,
     serviceType: 'asr',
     capabilities: ['transcribe', 'realtime', 'medical-terminology', 'multi-language'],
     isActive: true,
     isDefault: true,
-    priority: 10,
+    priority: 100,
     settings: {
       language: 'en-US',
       model: 'whisper-large-v3',
       useBuiltInSDK: true,
     },
     connectionStatus: 'connected',
-    notes: 'Primary ASR - Uses Z.AI SDK Whisper integration',
+    notes: 'Primary ASR - Built-in Z.AI SDK Whisper integration.',
+  },
+  // Local ASR Service
+  {
+    id: 'default-medasr-service',
+    serviceName: 'medasr',
+    displayName: 'Medical ASR Service (Local)',
+    description: 'Local medical ASR service with fine-tuned Whisper model.',
+    serviceUrl: 'http://localhost:3033',
+    port: 3033,
+    serviceType: 'asr',
+    capabilities: ['transcribe', 'realtime', 'medical-terminology'],
+    isActive: false,
+    isDefault: false,
+    priority: 50,
+    settings: {
+      language: 'en-US',
+      model: 'whisper-medium',
+    },
+    connectionStatus: 'untested',
+    notes: 'Local ASR - Requires Python service. Start with: npm run services:start',
   },
 ];
 
@@ -201,10 +445,9 @@ export async function getLLMConfigs(): Promise<LLMConfig[]> {
       }));
     }
   } catch (error) {
-    console.warn('[AI Config] Could not fetch LLM configs from database:', error);
+    console.warn('[AI Config] Could not fetch LLM configs from database, using defaults:', error);
   }
 
-  // Return defaults if database is empty or error
   return DEFAULT_LLM_CONFIGS;
 }
 
@@ -224,13 +467,20 @@ export async function hasLLMConfig(): Promise<boolean> {
   return configs.some((c) => c.isActive);
 }
 
+/**
+ * Get LLM configs by provider
+ */
+export async function getLLMConfigsByProvider(provider: string): Promise<LLMConfig[]> {
+  const configs = await getLLMConfigs();
+  return configs.filter((c) => c.provider === provider && c.isActive);
+}
+
 // ============================================================================
 // RAG Configuration Service
 // ============================================================================
 
 /**
  * Get all RAG configurations
- * Returns database records if available, otherwise returns defaults
  */
 export async function getRAGConfigs(): Promise<RAGConfig[]> {
   try {
@@ -258,10 +508,9 @@ export async function getRAGConfigs(): Promise<RAGConfig[]> {
       }));
     }
   } catch (error) {
-    console.warn('[AI Config] Could not fetch RAG configs from database:', error);
+    console.warn('[AI Config] Could not fetch RAG configs from database, using defaults:', error);
   }
 
-  // Return defaults if database is empty or error
   return DEFAULT_RAG_CONFIGS;
 }
 
@@ -314,10 +563,9 @@ export async function getASRConfigs(): Promise<RAGConfig[]> {
       }));
     }
   } catch (error) {
-    console.warn('[AI Config] Could not fetch ASR configs from database:', error);
+    console.warn('[AI Config] Could not fetch ASR configs from database, using defaults:', error);
   }
 
-  // Return defaults if database is empty or error
   return DEFAULT_ASR_CONFIGS;
 }
 
@@ -343,6 +591,7 @@ export interface AIConfigStatus {
   llmCount: number;
   ragCount: number;
   asrCount: number;
+  activeProviders: string[];
 }
 
 /**
@@ -359,26 +608,29 @@ export async function getAIConfigStatus(): Promise<AIConfigStatus> {
   const defaultRAG = ragConfigs.find((c) => c.isDefault && c.isActive);
   const defaultASR = asrConfigs.find((c) => c.isDefault && c.isActive);
 
+  const activeLLMs = llmConfigs.filter((c) => c.isActive);
+  const activeProviders = [...new Set(activeLLMs.map((c) => c.provider))];
+
   return {
-    hasLLM: llmConfigs.some((c) => c.isActive),
+    hasLLM: activeLLMs.length > 0,
     hasRAG: ragConfigs.some((c) => c.isActive),
     hasASR: asrConfigs.some((c) => c.isActive),
     defaultLLM: defaultLLM?.displayName || null,
     defaultRAG: defaultRAG?.displayName || null,
     defaultASR: defaultASR?.displayName || null,
-    llmCount: llmConfigs.length,
-    ragCount: ragConfigs.length,
-    asrCount: asrConfigs.length,
+    llmCount: activeLLMs.length,
+    ragCount: ragConfigs.filter((c) => c.isActive).length,
+    asrCount: asrConfigs.filter((c) => c.isActive).length,
+    activeProviders,
   };
 }
 
 // ============================================================================
-// Database Seed Helper (for persistent environments)
+// Database Seed Helper
 // ============================================================================
 
 /**
  * Seed the database with default configurations
- * This is called when the database is empty
  */
 export async function seedDefaultConfigs(): Promise<{
   llm: { created: number; existing: number };
@@ -399,10 +651,9 @@ export async function seedDefaultConfigs(): Promise<{
       });
 
       if (existing) {
-        // Update connection status to connected
         await db.lLMIntegration.update({
           where: { id: existing.id },
-          data: { connectionStatus: 'connected', isActive: true },
+          data: { connectionStatus: config.connectionStatus, isActive: config.isActive },
         });
         results.llm.existing++;
       } else {
@@ -437,7 +688,7 @@ export async function seedDefaultConfigs(): Promise<{
       if (existing) {
         await db.rAGServiceConfig.update({
           where: { id: existing.id },
-          data: { connectionStatus: 'connected', isActive: true },
+          data: { connectionStatus: config.connectionStatus, isActive: config.isActive },
         });
         results.rag.existing++;
       } else {
@@ -475,7 +726,7 @@ export async function seedDefaultConfigs(): Promise<{
       if (existing) {
         await db.rAGServiceConfig.update({
           where: { id: existing.id },
-          data: { connectionStatus: 'connected', isActive: true },
+          data: { connectionStatus: config.connectionStatus, isActive: config.isActive },
         });
         results.asr.existing++;
       } else {
@@ -503,5 +754,6 @@ export async function seedDefaultConfigs(): Promise<{
     }
   }
 
+  console.log('[AI Config] Seeding complete:', results);
   return results;
 }

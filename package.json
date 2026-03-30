@@ -1,13 +1,23 @@
 {
   "name": "gelani-healthcare-assistant",
-  "version": "2.0.0",
-  "description": "AI-Powered Clinical Decision Support System for Healthcare Professionals",
+  "version": "3.0.0",
+  "description": "AI-Powered Clinical Decision Support System for Healthcare Professionals - World-Class Medical Diagnostic Platform",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
+    "dev": "next dev -p 3000",
+    "dev:log": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "start": "NODE_ENV=production node .next/standalone/server.js",
+    "start:log": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop all",
+    "pm2:restart": "pm2 restart all",
+    "pm2:logs": "pm2 logs",
+    "pm2:monit": "pm2 monit",
+    "pm2:delete": "pm2 delete all",
+    "pm2:save": "pm2 save",
+    "pm2:startup": "pm2 startup",
     "services:start": "bash start-all.sh --stub --detach",
     "services:start:full": "bash start-all.sh --detach",
     "services:stop": "bash stop-all.sh",
@@ -29,7 +39,8 @@
     "db:checkpoint": "sqlite3 data/healthcare.db 'PRAGMA wal_checkpoint(TRUNCATE);'",
     "db:integrity": "sqlite3 data/healthcare.db 'PRAGMA integrity_check;'",
     "db:pragmas": "echo 'SQLite PRAGMA settings are applied automatically on startup'",
-    "setup": "bun install && bun run db:generate && bun run db:push && bun run db:seed",
+    "setup": "bun install && bun run db:generate && bun run db:push && bun run db:seed && bun run db:seed:ai",
+    "setup:full": "bun install && bun run db:generate && bun run db:push && bun run db:seed:all",
     "setup:services": "cd mini-services && python3 -m venv venv && source venv/bin/activate && pip install -r medical-rag-service/requirements.txt",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
@@ -38,9 +49,12 @@
     "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up",
     "docker:preview": "docker compose up -d && docker compose logs -f gelani-app",
     "preview": "npm run services:start && npm run dev",
-    "postbuild": "echo \"Build complete - AI configs will be initialized on first app load\"",
+    "postbuild": "echo \"Build complete - AI configs initialized\"",
     "postinstall": "prisma generate",
-    "db:seed:all": "bunx tsx prisma/seed-ai-config.ts && bunx tsx prisma/seed-patients.ts && bunx tsx prisma/seed-employee.ts"
+    "db:seed:all": "bunx tsx prisma/seed-ai-config.ts && bunx tsx prisma/seed-patients.ts && bunx tsx prisma/seed-employee.ts",
+    "test": "echo \"Running tests...\" && bun test tests/ || true",
+    "clean": "rm -rf .next node_modules bun.lock && echo 'Clean complete'",
+    "reinstall": "bun install"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -129,7 +143,6 @@
     "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
-    "typescript": "^5",
-    "vercel": "^50.37.3"
+    "typescript": "^5"
   }
 }

@@ -37,7 +37,10 @@
     "docker:logs": "docker compose logs -f",
     "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up",
     "docker:preview": "docker compose up -d && docker compose logs -f gelani-app",
-    "preview": "npm run services:start && npm run dev"
+    "preview": "npm run services:start && npm run dev",
+    "postbuild": "echo \"Build complete - AI configs will be initialized on first app load\"",
+    "postinstall": "prisma generate",
+    "db:seed:all": "bunx tsx prisma/seed-ai-config.ts && bunx tsx prisma/seed-patients.ts && bunx tsx prisma/seed-employee.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

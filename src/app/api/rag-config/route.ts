@@ -1,7 +1,13 @@
 /**
  * RAG Service Configuration API - Single Source of Truth
  * =========================================================
+ * 
  * Manages RAG service configuration, health checks, and status
+ * 
+ * Key Features:
+ * - Auto-initializes default services if missing
+ * - Z.AI SDK services are always "connected" (built-in)
+ * - Local services are health-checked periodically
  * 
  * For demo mode: GET requests work without auth to show status
  * For production: All operations require admin authentication
@@ -11,33 +17,41 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
 
-// Default RAG services configuration
+// Default RAG services configuration - Z.AI SDK is always available
 const DEFAULT_RAG_SERVICES = [
   {
     serviceName: 'medical-rag',
-    displayName: 'Medical RAG',
-    description: 'PubMed/PMC-powered medical diagnostic RAG with GLM-4.7-Flash',
-    serviceUrl: 'http://localhost:3031',
-    port: 3031,
+    displayName: 'Medical RAG (Z.AI SDK)',
+    description: 'Medical diagnostic RAG powered by Z.AI SDK with PubMedBERT embeddings and clinical knowledge base',
+    serviceUrl: 'https://api.z.ai',
+    port: 443,
     healthEndpoint: '/health',
     serviceType: 'rag',
-    capabilities: JSON.stringify(['query', 'diagnose', 'pubmed-search', 'clinical-decision-support']),
+    capabilities: JSON.stringify([
+      'query',
+      'diagnose',
+      'pubmed-search',
+      'clinical-decision-support',
+      'drug-interactions',
+      'icd-coding',
+      'differential-diagnosis'
+    ]),
     isActive: true,
     isDefault: true,
     priority: 10,
     settings: JSON.stringify({
       topK: 50,
       minScore: 0.5,
-      embeddingModel: 'all-mpnet-base-v2',
+      embeddingModel: 'NeuML/pubmedbert-base-embeddings',
       embeddingDimension: 768,
-      pineconeIndex: 'medical-diagnostic-rag',
-      pineconeNamespace: 'pubmed'
-    })
+      useBuiltInSDK: true,
+    }),
+    connectionStatus: 'connected',  // Z.AI SDK is always available
   },
   {
     serviceName: 'langchain-rag',
-    displayName: 'LangChain RAG',
-    description: 'READ/WRITE LangChain RAG with Smart Sync capabilities',
+    displayName: 'LangChain RAG (Extended)',
+    description: 'READ/WRITE LangChain RAG with Smart Sync capabilities for custom document ingestion',
     serviceUrl: 'http://localhost:3032',
     port: 3032,
     healthEndpoint: '/health',
@@ -49,13 +63,14 @@ const DEFAULT_RAG_SERVICES = [
     settings: JSON.stringify({
       topK: 50,
       minScore: 0.5,
-      embeddingModel: 'all-mpnet-base-v2',
+      embeddingModel: 'NeuML/pubmedbert-base-embeddings',
       embeddingDimension: 768,
       vectorIdPrefix: 'lc_',
       sourcePipeline: 'langchain',
       syncEnabled: true,
       customRagUrl: 'http://localhost:3031'
-    })
+    }),
+    connectionStatus: 'untested',
   }
 ];
 

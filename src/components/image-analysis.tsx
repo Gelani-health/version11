@@ -80,6 +80,18 @@ interface AnalysisResult {
   teachingPoints?: string[];
   clinicalCorrelation?: string;
   followUp?: string;
+  criticalAlerts?: CriticalAlert[];
+  overallUrgency?: 'routine' | 'urgent' | 'critical' | 'stat';
+}
+
+interface CriticalAlert {
+  alertId: string;
+  alertType: string;
+  finding: string;
+  description: string;
+  urgency: 'stat' | 'urgent';
+  requiredAction: string;
+  timeToAction?: string;
 }
 
 interface RejectionResult {
@@ -345,6 +357,20 @@ const IMAGING_TYPES = [
 // Get unique categories
 const IMAGING_CATEGORIES = [...new Set(IMAGING_TYPES.map(t => t.category))];
 
+// Helper function to map backend severity to frontend severity
+function mapSeverity(severity: string | undefined): "normal" | "abnormal" | "critical" {
+  if (!severity) return "normal";
+  
+  const s = severity.toLowerCase();
+  if (s === "critical" || s === "stat" || s === "malignant" || s === "suspicious") {
+    return "critical";
+  }
+  if (s === "abnormal" || s === "indeterminate" || s === "likely_benign") {
+    return "abnormal";
+  }
+  return "normal";
+}
+
 export function ImageAnalysis() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
@@ -485,18 +511,61 @@ export function ImageAnalysis() {
       
       // Successful analysis
       if (data.data) {
+        // Transform backend response to frontend format
+        const backendData = data.data;
+        
+        // Map findings from backend StructuredFinding to frontend Finding
+        const mappedFindings: Finding[] = (backendData.findings || []).map((f: any) => ({
+          description: f.description || f.term || "",
+          location: f.location?.region || f.location || "General",
+          confidence: f.confidence || 0.85,
+          severity: mapSeverity(f.severity),
+        }));
+        
+        // Map recommendations - can be string array or object array
+        let mappedRecommendations: string[] = [];
+        if (backendData.recommendations) {
+          if (Array.isArray(backendData.recommendations)) {
+            mappedRecommendations = backendData.recommendations.map((r: any) => 
+              typeof r === 'string' ? r : r.recommendation || r.rationale || ""
+            );
+          }
+        }
+        
+        // Map technical quality
+        const techQuality = backendData.technicalQuality;
+        const qualityString = techQuality 
+          ? `Overall: ${techQuality.overallQuality || 'Adequate'}. Positioning: ${techQuality.positioning || 'Adequate'}. ${techQuality.diagnostic ? 'Diagnostic quality.' : 'Non-diagnostic.'}`
+          : undefined;
+        
         setAnalysisResult({
-          id: Date.now().toString(),
-          type: data.data.type || selectedType,
-          findings: data.data.findings || [],
-          impression: data.data.impression || "Analysis completed",
-          confidence: data.data.confidence || 0.85,
-          recommendations: data.data.recommendations || [],
-          technicalQuality: data.data.technicalQuality,
-          detailedAnalysis: data.data.detailedAnalysis,
-          teachingPoints: data.data.teachingPoints,
-          clinicalCorrelation: data.data.clinicalCorrelation,
-          followUp: data.data.followUp,
+          id: backendData.analysisMetadata?.analysisId || Date.now().toString(),
+          type: backendData.studyType || backendData.modality || selectedType,
+          findings: mappedFindings.length > 0 ? mappedFindings : [{
+            description: backendData.impression || "Analysis completed",
+            location: "General",
+            confidence: backendData.overallConfidence || 0.85,
+            severity: "normal",
+          }],
+          impression: backendData.impression || backendData.conclusion || "Analysis completed",
+          confidence: backendData.overallConfidence || 0.85,
+          recommendations: mappedRecommendations,
+          technicalQuality: qualityString,
+          detailedAnalysis: {
+            systematicReview: backendData.normalFindings?.join('. '),
+            abnormalFindings: backendData.abnormalFindings?.join('. '),
+            normalFindings: backendData.normalFindings?.join('. '),
+            differentialConsiderations: backendData.differentialDiagnoses?.map((d: any) => 
+              `${d.condition} (${Math.round(d.probability * 100)}% probability)`
+            ).join('. '),
+          },
+          teachingPoints: backendData.teachingPoints,
+          clinicalCorrelation: backendData.clinicalCorrelation,
+          followUp: backendData.followUpRecommendations?.map((f: any) => 
+            `${f.timeframe}: ${f.modality} for ${f.indication}`
+          ).join('. '),
+          criticalAlerts: backendData.criticalAlerts || [],
+          overallUrgency: backendData.overallUrgency || 'routine',
         });
         
         toast({
@@ -849,6 +918,48 @@ export function ImageAnalysis() {
             ) : analysisResult ? (
               <ScrollArea className="h-[350px] pr-4">
                 <div className="space-y-4">
+                  {/* Critical Alerts - Show First if Present */}
+                  {analysisResult.criticalAlerts && analysisResult.criticalAlerts.length > 0 && (
+                    <div className="space-y-2">
+                      {analysisResult.criticalAlerts.map((alert, i) => (
+                        <motion.div
+                          key={alert.alertId || i}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: i * 0.1 }}
+                        >
+                          <Alert className={`border-2 ${
+                            alert.urgency === 'stat' 
+                              ? 'bg-red-50 border-red-400' 
+                              : 'bg-orange-50 border-orange-400'
+                          }`}>
+                            <AlertTriangle className={`h-5 w-5 ${
+                              alert.urgency === 'stat' ? 'text-red-600' : 'text-orange-600'
+                            }`} />
+                            <AlertTitle className={`font-bold ${
+                              alert.urgency === 'stat' ? 'text-red-800' : 'text-orange-800'
+                            }`}>
+                              ⚠️ {alert.urgency.toUpperCase()}: {alert.finding}
+                            </AlertTitle>
+                            <AlertDescription className="mt-2">
+                              <p className={`font-medium ${
+                                alert.urgency === 'stat' ? 'text-red-700' : 'text-orange-700'
+                              }`}>{alert.description}</p>
+                              <p className="mt-2 text-sm font-semibold text-red-900">
+                                Required Action: {alert.requiredAction}
+                              </p>
+                              {alert.timeToAction && (
+                                <p className="text-xs text-red-600 mt-1">
+                                  Time to Action: {alert.timeToAction}
+                                </p>
+                              )}
+                            </AlertDescription>
+                          </Alert>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                  
                   {/* Technical Quality */}
                   {analysisResult.technicalQuality && (
                     <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">

@@ -1212,6 +1212,43 @@ function detectModality(imageType?: string, clinicalContext?: string): ModalityT
   return 'other';
 }
 
+/**
+ * Format image data to proper data URL format for VLM
+ * Handles both raw base64 and already-formatted data URLs
+ */
+function formatImageUrl(imageBase64: string): string {
+  // Already a data URL
+  if (imageBase64.startsWith('data:')) {
+    return imageBase64;
+  }
+  
+  // Detect image type from base64 header
+  let mimeType = 'image/jpeg'; // Default
+  
+  // Check for PNG signature (first 8 bytes in base64)
+  if (imageBase64.startsWith('iVBORw0KGgo')) {
+    mimeType = 'image/png';
+  }
+  // Check for JPEG signature
+  else if (imageBase64.startsWith('/9j/') || imageBase64.startsWith('/9j/4')) {
+    mimeType = 'image/jpeg';
+  }
+  // Check for GIF signature
+  else if (imageBase64.startsWith('R0lGOD')) {
+    mimeType = 'image/gif';
+  }
+  // Check for WebP signature
+  else if (imageBase64.startsWith('UklGR')) {
+    mimeType = 'image/webp';
+  }
+  // Check for DICOM (often starts with DI prefix or specific patterns)
+  else if (imageBase64.startsWith('DICM') || imageBase64.includes('DICM')) {
+    mimeType = 'application/dicom';
+  }
+  
+  return `data:${mimeType};base64,${imageBase64}`;
+}
+
 async function performVLMAnalysis(
   imageBase64: string,
   modality: ModalityType,
@@ -1224,6 +1261,9 @@ async function performVLMAnalysis(
   try {
     const zai = await getZAI();
     
+    // Format the image URL properly for VLM
+    const formattedImageUrl = formatImageUrl(imageBase64);
+    
     const response = await zai.chat.completions.createVision({
       model: 'glm-4-flash',
       messages: [
@@ -1231,7 +1271,7 @@ async function performVLMAnalysis(
           role: 'user',
           content: [
             { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: imageBase64 } }
+            { type: 'image_url', image_url: { url: formattedImageUrl } }
           ]
         }
       ],

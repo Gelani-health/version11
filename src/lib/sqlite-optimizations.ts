@@ -82,9 +82,10 @@ function execSqlite3(dbPath: string, command: string, options?: { timeout?: numb
   }
 
   try {
+    const encoding: BufferEncoding = (options?.encoding as BufferEncoding) || 'utf-8'
     const result = execSync(`"${sqlite3}" "${dbPath}" "${command}"`, {
       timeout: options?.timeout || 5000,
-      encoding: options?.encoding || 'utf-8',
+      encoding: encoding,
       stdio: 'pipe'
     })
     return result?.toString() || null

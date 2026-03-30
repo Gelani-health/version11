@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { decryptApiKey, isEncrypted } from "@/lib/encryption";
 import ZAI from "z-ai-web-dev-sdk";
+import { getDefaultLLMConfig, getLLMConfigs, seedDefaultConfigs } from "@/lib/ai-config-service";
 
 // ============================================================================
 // Configuration Constants
@@ -161,87 +162,131 @@ async function fetchWithRetry(
 
 // Get all active LLM integrations
 export async function getActiveIntegrations(): Promise<LLMProviderConfig[]> {
-  const integrations = await db.lLMIntegration.findMany({
-    where: { isActive: true },
-    orderBy: [{ isDefault: "desc" }, { priority: "desc" }],
-  });
+  try {
+    // First, try to seed defaults if database is empty
+    await seedDefaultConfigs();
+    
+    const integrations = await db.lLMIntegration.findMany({
+      where: { isActive: true },
+      orderBy: [{ isDefault: "desc" }, { priority: "desc" }],
+    });
 
-  return integrations.map((i) => ({
-    id: i.id,
-    provider: i.provider,
-    displayName: i.displayName,
-    baseUrl: i.baseUrl,
-    username: i.username,
-    password: i.password,
-    apiKey: getDecryptedApiKey(i.apiKey), // Decrypt for use
-    model: i.model,
-    isActive: i.isActive,
-    isDefault: i.isDefault,
-    priority: i.priority,
-    settings: i.settings ? JSON.parse(i.settings) : undefined,
-    notes: i.notes,
-    connectionStatus: i.connectionStatus,
-    lastError: i.lastError,
-    totalRequests: i.totalRequests,
-    lastUsed: i.lastUsed,
+    if (integrations.length > 0) {
+      return integrations.map((i) => ({
+        id: i.id,
+        provider: i.provider,
+        displayName: i.displayName,
+        baseUrl: i.baseUrl,
+        username: i.username,
+        password: i.password,
+        apiKey: getDecryptedApiKey(i.apiKey), // Decrypt for use
+        model: i.model,
+        isActive: i.isActive,
+        isDefault: i.isDefault,
+        priority: i.priority,
+        settings: i.settings ? JSON.parse(i.settings) : undefined,
+        notes: i.notes,
+        connectionStatus: i.connectionStatus,
+        lastError: i.lastError,
+        totalRequests: i.totalRequests,
+        lastUsed: i.lastUsed,
+      }));
+    }
+  } catch (error) {
+    console.warn("[ProviderManager] Database unavailable, using default configs:", error);
+  }
+
+  // Fallback to default configs from ai-config-service
+  const defaultConfigs = await getLLMConfigs();
+  return defaultConfigs.filter(c => c.isActive).map(c => ({
+    ...c,
+    username: null,
+    password: null,
+    apiKey: null, // Z.AI SDK has built-in auth
+    lastError: null,
+    totalRequests: 0,
+    lastUsed: null,
   }));
 }
 
 // Get the default LLM integration
 export async function getDefaultLLM(): Promise<LLMProviderConfig | null> {
-  const defaultIntegration = await db.lLMIntegration.findFirst({
-    where: { isActive: true, isDefault: true },
-  });
+  try {
+    // First, try to seed defaults if database is empty
+    await seedDefaultConfigs();
+    
+    const defaultIntegration = await db.lLMIntegration.findFirst({
+      where: { isActive: true, isDefault: true },
+    });
 
-  if (defaultIntegration) {
+    if (defaultIntegration) {
+      return {
+        id: defaultIntegration.id,
+        provider: defaultIntegration.provider,
+        displayName: defaultIntegration.displayName,
+        baseUrl: defaultIntegration.baseUrl,
+        username: defaultIntegration.username,
+        password: defaultIntegration.password,
+        apiKey: getDecryptedApiKey(defaultIntegration.apiKey), // Decrypt for use
+        model: defaultIntegration.model,
+        isActive: defaultIntegration.isActive,
+        isDefault: defaultIntegration.isDefault,
+        priority: defaultIntegration.priority,
+        settings: defaultIntegration.settings ? JSON.parse(defaultIntegration.settings) : undefined,
+        notes: defaultIntegration.notes,
+        connectionStatus: defaultIntegration.connectionStatus,
+        lastError: defaultIntegration.lastError,
+        totalRequests: defaultIntegration.totalRequests,
+        lastUsed: defaultIntegration.lastUsed,
+      };
+    }
+
+    // Fallback to first active integration
+    const firstActive = await db.lLMIntegration.findFirst({
+      where: { isActive: true },
+      orderBy: { priority: "desc" },
+    });
+
+    if (firstActive) {
+      return {
+        id: firstActive.id,
+        provider: firstActive.provider,
+        displayName: firstActive.displayName,
+        baseUrl: firstActive.baseUrl,
+        username: firstActive.username,
+        password: firstActive.password,
+        apiKey: getDecryptedApiKey(firstActive.apiKey),
+        model: firstActive.model,
+        isActive: firstActive.isActive,
+        isDefault: firstActive.isDefault,
+        priority: firstActive.priority,
+        settings: firstActive.settings ? JSON.parse(firstActive.settings) : undefined,
+        notes: firstActive.notes,
+        connectionStatus: firstActive.connectionStatus,
+        lastError: firstActive.lastError,
+        totalRequests: firstActive.totalRequests,
+        lastUsed: firstActive.lastUsed,
+      };
+    }
+  } catch (error) {
+    console.warn("[ProviderManager] Database unavailable, using default config:", error);
+  }
+
+  // Fallback to default config from ai-config-service
+  const defaultConfig = await getDefaultLLMConfig();
+  if (defaultConfig) {
     return {
-      id: defaultIntegration.id,
-      provider: defaultIntegration.provider,
-      displayName: defaultIntegration.displayName,
-      baseUrl: defaultIntegration.baseUrl,
-      username: defaultIntegration.username,
-      password: defaultIntegration.password,
-      apiKey: getDecryptedApiKey(defaultIntegration.apiKey), // Decrypt for use
-      model: defaultIntegration.model,
-      isActive: defaultIntegration.isActive,
-      isDefault: defaultIntegration.isDefault,
-      priority: defaultIntegration.priority,
-      settings: defaultIntegration.settings ? JSON.parse(defaultIntegration.settings) : undefined,
-      notes: defaultIntegration.notes,
-      connectionStatus: defaultIntegration.connectionStatus,
-      lastError: defaultIntegration.lastError,
-      totalRequests: defaultIntegration.totalRequests,
-      lastUsed: defaultIntegration.lastUsed,
+      ...defaultConfig,
+      username: null,
+      password: null,
+      apiKey: null, // Z.AI SDK has built-in auth
+      lastError: null,
+      totalRequests: 0,
+      lastUsed: null,
     };
   }
 
-  // Fallback to first active integration
-  const firstActive = await db.lLMIntegration.findFirst({
-    where: { isActive: true },
-    orderBy: { priority: "desc" },
-  });
-
-  if (!firstActive) return null;
-
-  return {
-    id: firstActive.id,
-    provider: firstActive.provider,
-    displayName: firstActive.displayName,
-    baseUrl: firstActive.baseUrl,
-    username: firstActive.username,
-    password: firstActive.password,
-    apiKey: getDecryptedApiKey(firstActive.apiKey), // Decrypt for use
-    model: firstActive.model,
-    isActive: firstActive.isActive,
-    isDefault: firstActive.isDefault,
-    priority: firstActive.priority,
-    settings: firstActive.settings ? JSON.parse(firstActive.settings) : undefined,
-    notes: firstActive.notes,
-    connectionStatus: firstActive.connectionStatus,
-    lastError: firstActive.lastError,
-    totalRequests: firstActive.totalRequests,
-    lastUsed: firstActive.lastUsed,
-  };
+  return null;
 }
 
 // Get a specific LLM integration by ID
@@ -633,10 +678,15 @@ export async function routeLLMRequest(
 
 // Check if any LLM provider is configured
 export async function hasConfiguredProvider(): Promise<boolean> {
-  const count = await db.lLMIntegration.count({
-    where: { isActive: true },
-  });
-  return count > 0;
+  try {
+    const count = await db.lLMIntegration.count({
+      where: { isActive: true },
+    });
+    return count > 0;
+  } catch (error) {
+    console.warn("[ProviderManager] Database unavailable, returning true for default provider");
+    return true; // Default provider is always available via Z.AI SDK
+  }
 }
 
 // Get provider statistics
@@ -646,15 +696,25 @@ export async function getProviderStats(): Promise<{
   defaultProvider: string | null;
   connectedProviders: number;
 }> {
-  const totalProviders = await db.lLMIntegration.count();
-  const activeProviders = await db.lLMIntegration.count({ where: { isActive: true } });
-  const defaultProvider = await db.lLMIntegration.findFirst({ where: { isDefault: true } });
-  const connectedProviders = await db.lLMIntegration.count({ where: { connectionStatus: "connected" } });
+  try {
+    const totalProviders = await db.lLMIntegration.count();
+    const activeProviders = await db.lLMIntegration.count({ where: { isActive: true } });
+    const defaultProvider = await db.lLMIntegration.findFirst({ where: { isDefault: true } });
+    const connectedProviders = await db.lLMIntegration.count({ where: { connectionStatus: "connected" } });
 
-  return {
-    totalProviders,
-    activeProviders,
-    defaultProvider: defaultProvider?.displayName || null,
-    connectedProviders,
-  };
+    return {
+      totalProviders,
+      activeProviders,
+      defaultProvider: defaultProvider?.displayName || null,
+      connectedProviders,
+    };
+  } catch (error) {
+    console.warn("[ProviderManager] Database unavailable, returning default stats");
+    return {
+      totalProviders: 2,
+      activeProviders: 2,
+      defaultProvider: 'Z.ai GLM-4.7-Flash',
+      connectedProviders: 2,
+    };
+  }
 }

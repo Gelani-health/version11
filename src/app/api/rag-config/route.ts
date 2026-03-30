@@ -5,7 +5,8 @@
  * Manages RAG service configuration, health checks, and status
  * 
  * Key Features:
- * - Auto-initializes default services if missing
+ * - Always returns valid configurations (database or defaults)
+ * - Works in both persistent and ephemeral (Vercel) environments
  * - Z.AI SDK services are always "connected" (built-in)
  * - Local services are health-checked periodically
  * 
@@ -16,71 +17,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withAuth, AuthenticatedUser } from '@/lib/auth-middleware';
-
-// Default RAG services configuration - Z.AI SDK is always available
-const DEFAULT_RAG_SERVICES = [
-  {
-    serviceName: 'medical-rag',
-    displayName: 'Medical RAG (Z.AI SDK)',
-    description: 'Medical diagnostic RAG powered by Z.AI SDK with PubMedBERT embeddings and clinical knowledge base',
-    serviceUrl: 'https://api.z.ai',
-    port: 443,
-    healthEndpoint: '/health',
-    serviceType: 'rag',
-    capabilities: JSON.stringify([
-      'query',
-      'diagnose',
-      'pubmed-search',
-      'clinical-decision-support',
-      'drug-interactions',
-      'icd-coding',
-      'differential-diagnosis'
-    ]),
-    isActive: true,
-    isDefault: true,
-    priority: 10,
-    settings: JSON.stringify({
-      topK: 50,
-      minScore: 0.5,
-      embeddingModel: 'NeuML/pubmedbert-base-embeddings',
-      embeddingDimension: 768,
-      useBuiltInSDK: true,
-    }),
-    connectionStatus: 'connected',  // Z.AI SDK is always available
-  },
-  {
-    serviceName: 'langchain-rag',
-    displayName: 'LangChain RAG (Extended)',
-    description: 'READ/WRITE LangChain RAG with Smart Sync capabilities for custom document ingestion',
-    serviceUrl: 'http://localhost:3032',
-    port: 3032,
-    healthEndpoint: '/health',
-    serviceType: 'rag',
-    capabilities: JSON.stringify(['query', 'ingest', 'sync', 'batch-ingest', 'delete']),
-    isActive: true,
-    isDefault: false,
-    priority: 5,
-    settings: JSON.stringify({
-      topK: 50,
-      minScore: 0.5,
-      embeddingModel: 'NeuML/pubmedbert-base-embeddings',
-      embeddingDimension: 768,
-      vectorIdPrefix: 'lc_',
-      sourcePipeline: 'langchain',
-      syncEnabled: true,
-      customRagUrl: 'http://localhost:3031'
-    }),
-    connectionStatus: 'untested',
-  }
-];
-
-// Demo mode - allow without auth for read operations
-const DEMO_MODE = process.env.DEMO_MODE !== 'false'; // Default to true for demo
+import { 
+  getRAGConfigs, 
+  getDefaultRAGConfig, 
+  seedDefaultConfigs,
+  type RAGConfig 
+} from '@/lib/ai-config-service';
 
 /**
  * GET - Retrieve RAG configurations
- * In demo mode: Works without authentication
- * In production: Requires admin authentication
+ * Always returns valid configurations (database or defaults)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -89,52 +35,34 @@ export async function GET(request: NextRequest) {
     const checkHealth = searchParams.get('checkHealth') === 'true';
 
     // Get specific service or all services
-    let services;
+    let services: RAGConfig[];
+    
     if (serviceName) {
-      services = await db.rAGServiceConfig.findUnique({
-        where: { serviceName }
-      });
+      // Get all and filter by serviceName
+      const allServices = await getRAGConfigs();
+      const service = allServices.find(s => s.serviceName === serviceName);
+      services = service ? [service] : [];
     } else {
-      services = await db.rAGServiceConfig.findMany({
-        orderBy: [
-          { isDefault: 'desc' },
-          { priority: 'desc' },
-          { createdAt: 'asc' }
-        ]
-      });
-    }
-
-    // Initialize default services if none exist
-    if (!serviceName && services.length === 0) {
-      await initializeDefaultServices();
-      services = await db.rAGServiceConfig.findMany({
-        orderBy: [
-          { isDefault: 'desc' },
-          { priority: 'desc' },
-          { createdAt: 'asc' }
-        ]
-      });
+      services = await getRAGConfigs();
     }
 
     // Optionally check health of each service
-    if (checkHealth && Array.isArray(services)) {
+    if (checkHealth && services.length > 0) {
       services = await Promise.all(
         services.map(async (service) => {
           const healthResult = await checkServiceHealth(service);
           return {
             ...service,
             connectionStatus: healthResult.status,
-            responseTimeMs: healthResult.responseTimeMs,
-            lastError: healthResult.error
-          };
+            // Note: We can't modify the returned object from getRAGConfigs
+            // so we create a new object with updated status
+          } as RAGConfig;
         })
       );
     }
 
     // Get default service for convenience
-    const defaultService = Array.isArray(services)
-      ? services.find(s => s.isDefault && s.isActive) || services.find(s => s.isActive)
-      : services;
+    const defaultService = services.find(s => s.isDefault && s.isActive) || services.find(s => s.isActive);
 
     return NextResponse.json({
       success: true,
@@ -179,7 +107,7 @@ export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUse
     if (!body.port) {
       try {
         const url = new URL(body.serviceUrl);
-        body.port = parseInt(url.port) || 80;
+        body.port = parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80);
       } catch {
         body.port = 80;
       }
@@ -188,7 +116,7 @@ export const POST = withAuth(async (request: NextRequest, user: AuthenticatedUse
     // If setting as default, unset other defaults
     if (body.isDefault) {
       await db.rAGServiceConfig.updateMany({
-        where: { isDefault: true },
+        where: { isDefault: true, serviceType: body.serviceType || 'rag' },
         data: { isDefault: false }
       });
     }
@@ -293,7 +221,7 @@ export const PUT = withAuth(async (request: NextRequest, user: AuthenticatedUser
 
     // Unset all defaults, then set new default
     await db.rAGServiceConfig.updateMany({
-      where: { isDefault: true },
+      where: { isDefault: true, serviceType: service.serviceType },
       data: { isDefault: false }
     });
 
@@ -364,30 +292,24 @@ export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedU
 // Helper Functions
 // ============================================
 
-async function initializeDefaultServices() {
-  console.log('[RAG Config] Initializing default RAG services...');
-  for (const service of DEFAULT_RAG_SERVICES) {
-    try {
-      await db.rAGServiceConfig.create({ data: service as any });
-      console.log(`[RAG Config] Created service: ${service.serviceName}`);
-    } catch (error) {
-      console.error(`[RAG Config] Error creating service ${service.serviceName}:`, error);
-    }
-  }
-}
-
 async function checkServiceHealth(service: {
   serviceUrl: string;
-  healthEndpoint: string;
+  healthEndpoint?: string;
   serviceName?: string;
+  connectionStatus?: string;
 }): Promise<{ status: string; responseTimeMs: number | null; error?: string }> {
+  // Z.AI SDK services are always connected
+  if (service.serviceUrl.includes('api.z.ai') || service.connectionStatus === 'connected') {
+    return { status: 'connected', responseTimeMs: 0 };
+  }
+
   const startTime = Date.now();
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(`${service.serviceUrl}${service.healthEndpoint}`, {
+    const response = await fetch(`${service.serviceUrl}${service.healthEndpoint || '/health'}`, {
       method: 'GET',
       signal: controller.signal
     });

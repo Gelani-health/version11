@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth, AuthenticatedUser } from "@/lib/auth-middleware";
 import { encryptApiKey, decryptApiKey, isEncrypted } from "@/lib/encryption";
+import { 
+  getLLMConfigs, 
+  seedDefaultConfigs,
+  type LLMConfig 
+} from "@/lib/ai-config-service";
 
 // LLM Integrations API - Single Source of Truth for AI Providers
 // Supports full CRUD operations with the updated schema
@@ -9,10 +14,13 @@ import { encryptApiKey, decryptApiKey, isEncrypted } from "@/lib/encryption";
 // 
 // For demo mode: GET requests work without auth to show status
 // For production: All operations require admin authentication
+//
+// CRITICAL: Always returns valid configs (database or defaults)
+// Works in both persistent and ephemeral (Vercel) environments
 
 // Provider types with their default configurations
 const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; models: string[] }> = {
-  zai: { baseUrl: "https://api.z.ai", models: ["z-1", "z-2", "glm-4-flash", "glm-4"] },
+  zai: { baseUrl: "https://api.z.ai/api/paas/v4", models: ["GLM-4.7-Flash", "GLM-4-Plus", "glm-4-flash", "glm-4"] },
   openai: { baseUrl: "https://api.openai.com/v1", models: ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"] },
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1", models: ["gemini-pro", "gemini-pro-vision", "gemini-1.5-flash"] },
   claude: { baseUrl: "https://api.anthropic.com/v1", models: ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"] },
@@ -20,49 +28,17 @@ const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; models: string[] }> =
   other: { baseUrl: "", models: [] },
 };
 
-// Default LLM integrations for demo/initial setup
-const DEFAULT_LLM_INTEGRATIONS = [
-  {
-    provider: 'zai',
-    displayName: 'Z.ai GLM-4 Flash',
-    baseUrl: 'https://api.z.ai',
-    model: 'glm-4-flash',
-    isActive: true,
-    isDefault: true,
-    priority: 100,
-    settings: JSON.stringify({
-      temperature: 0.7,
-      maxTokens: 4096,
-      topP: 0.9,
-      enableStreaming: true
-    }),
-    notes: 'Default Z.ai GLM-4 Flash model for clinical decision support'
-  },
-  {
-    provider: 'zai',
-    displayName: 'Z.ai GLM-4',
-    baseUrl: 'https://api.z.ai',
-    model: 'glm-4',
-    isActive: true,
-    isDefault: false,
-    priority: 90,
-    settings: JSON.stringify({
-      temperature: 0.7,
-      maxTokens: 8192,
-      topP: 0.9,
-      enableStreaming: true
-    }),
-    notes: 'Z.ai GLM-4 for complex medical reasoning tasks'
-  }
-];
-
 // Helper function to mask API key (show only last 4 characters)
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
   // Decrypt first if encrypted
-  const decryptedKey = isEncrypted(apiKey) ? decryptApiKey(apiKey) : apiKey;
-  if (!decryptedKey || decryptedKey.length <= 4) return "••••";
-  return "••••" + decryptedKey.slice(-4);
+  try {
+    const decryptedKey = isEncrypted(apiKey) ? decryptApiKey(apiKey) : apiKey;
+    if (!decryptedKey || decryptedKey.length <= 4) return "••••";
+    return "••••" + decryptedKey.slice(-4);
+  } catch {
+    return "••••";
+  }
 }
 
 // Helper function to prepare integration response with masked sensitive data
@@ -96,13 +72,37 @@ function prepareIntegrationResponse(integration: {
   };
 }
 
+// Convert LLMConfig from ai-config-service to API response format
+function llmConfigToResponse(config: LLMConfig) {
+  return {
+    id: config.id,
+    provider: config.provider,
+    displayName: config.displayName,
+    baseUrl: config.baseUrl,
+    username: null,
+    password: null,
+    apiKey: null,
+    hasApiKey: false,
+    model: config.model,
+    isActive: config.isActive,
+    isDefault: config.isDefault,
+    priority: config.priority,
+    settings: config.settings ? JSON.stringify(config.settings) : null,
+    notes: config.notes,
+    totalRequests: 0,
+    lastUsed: null,
+    lastError: null,
+    connectionStatus: config.connectionStatus,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    providerDefaults: PROVIDER_DEFAULTS[config.provider],
+  };
+}
+
 /**
  * GET - List all LLM integrations
- * In demo mode: Works without authentication for read operations
- * In production: Requires admin authentication
- * Query params:
- * - forSelection=true: Return simplified data for dropdown
- * - activeOnly=true: Return only active integrations
+ * Always returns valid configurations (database or defaults)
+ * Works in both persistent and ephemeral (Vercel) environments
  */
 export async function GET(request: NextRequest) {
   try {
@@ -110,20 +110,29 @@ export async function GET(request: NextRequest) {
     const forSelection = searchParams.get("forSelection") === "true";
     const activeOnly = searchParams.get("activeOnly") === "true";
 
-    const where = activeOnly ? { isActive: true } : {};
+    // Try to seed defaults first
+    await seedDefaultConfigs();
 
-    let integrations = await db.lLMIntegration.findMany({
-      where,
-      orderBy: [{ isDefault: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
-    });
-
-    // Initialize default integrations if none exist
-    if (integrations.length === 0) {
-      await initializeDefaultIntegrations();
+    // Try to get from database
+    let integrations: any[] = [];
+    try {
+      const where = activeOnly ? { isActive: true } : {};
       integrations = await db.lLMIntegration.findMany({
         where,
         orderBy: [{ isDefault: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
       });
+    } catch (dbError) {
+      console.warn("[LLM Integrations] Database unavailable, using defaults:", dbError);
+    }
+
+    // If database is empty or unavailable, use default configs
+    if (integrations.length === 0) {
+      console.log("[LLM Integrations] No database records, returning default configs");
+      const defaultConfigs = await getLLMConfigs();
+      integrations = defaultConfigs.map(llmConfigToResponse);
+    } else {
+      // Mask sensitive data
+      integrations = integrations.map(prepareIntegrationResponse);
     }
 
     // Find current default
@@ -150,19 +159,35 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Return full data for management with masked sensitive fields
+    // Return full data for management
     return NextResponse.json({
       success: true,
-      data: integrations.map(prepareIntegrationResponse),
+      data: integrations,
       defaultId,
       providerDefaults: PROVIDER_DEFAULTS,
     });
   } catch (error) {
     console.error("Error fetching LLM integrations:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch LLM integrations" },
-      { status: 500 }
-    );
+    
+    // Even on error, return default configs
+    try {
+      const defaultConfigs = await getLLMConfigs();
+      const defaultData = defaultConfigs.map(llmConfigToResponse);
+      const defaultId = defaultData.find(c => c.isDefault)?.id || null;
+      
+      return NextResponse.json({
+        success: true,
+        data: defaultData,
+        defaultId,
+        providerDefaults: PROVIDER_DEFAULTS,
+        warning: "Using default configurations (database unavailable)",
+      });
+    } catch (fallbackError) {
+      return NextResponse.json(
+        { success: false, error: "Failed to fetch LLM integrations" },
+        { status: 500 }
+      );
+    }
   }
 }
 
@@ -420,25 +445,3 @@ export const DELETE = withAuth(async (request: NextRequest, user: AuthenticatedU
     );
   }
 }, { requiredPermissions: ['employee:write'] });
-
-// ============================================
-// Helper Functions
-// ============================================
-
-async function initializeDefaultIntegrations() {
-  console.log('[LLM Integration] Initializing default LLM integrations...');
-  for (const integration of DEFAULT_LLM_INTEGRATIONS) {
-    try {
-      await db.lLMIntegration.create({
-        data: {
-          ...integration,
-          connectionStatus: 'untested',
-          totalRequests: 0
-        }
-      });
-      console.log(`[LLM Integration] Created integration: ${integration.displayName}`);
-    } catch (error) {
-      console.error(`[LLM Integration] Error creating integration ${integration.displayName}:`, error);
-    }
-  }
-}

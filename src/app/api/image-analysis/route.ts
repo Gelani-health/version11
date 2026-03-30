@@ -1,35 +1,1149 @@
+/**
+ * World-Class Medical Image Analysis Engine
+ * ==========================================
+ * 
+ * Comprehensive clinical decision support for diagnostic imaging with:
+ * - Modality-specific analysis protocols
+ * - Structured radiological reporting (RSNA RadLex compliant)
+ * - Urgent finding detection and alerts
+ * - Differential diagnosis support
+ * - ACR Appropriateness Criteria integration
+ * - Confidence calibration
+ * 
+ * Evidence-Based Standards:
+ * - RSNA RadLex terminology
+ * - ACR Appropriateness Criteria
+ * - BI-RADS, TI-RADS, PI-RADS, LI-RADS classifications
+ * - Structured reporting templates
+ * 
+ * HIPAA Compliance: All patient data handled per HIPAA guidelines
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from 'z-ai-web-dev-sdk';
 import { authenticateRequest } from '@/lib/auth-middleware';
+import { createAuditLog } from '@/lib/audit-service';
 
-interface Finding {
+// =============================================================================
+// TYPE DEFINITIONS
+// =============================================================================
+
+export type ModalityType = 
+  | 'xray_chest' | 'xray_abdominal' | 'xray_skeletal' | 'xray_spine' | 'xray_extremity'
+  | 'ct_head' | 'ct_chest' | 'ct_abdomen' | 'ct_pelvis' | 'ct_spine' | 'ct_angio' | 'ct_other'
+  | 'mri_brain' | 'mri_spine' | 'mri_musculoskeletal' | 'mri_cardiac' | 'mri_abdomen' | 'mri_pelvis' | 'mri_other'
+  | 'us_abdominal' | 'us_cardiac' | 'us_vascular' | 'us_obstetric' | 'us_thyroid' | 'us_musculoskeletal' | 'us_other'
+  | 'mammogram' | 'pet_ct' | 'dexa' | 'angio' | 'fluoro' | 'nuclear' | 'other';
+
+export type UrgencyLevel = 'routine' | 'urgent' | 'critical' | 'stat';
+
+export type SeverityLevel = 'normal' | 'benign' | 'likely_benign' | 'indeterminate' | 'suspicious' | 'malignant' | 'critical';
+
+export type ConfidenceLevel = 'high' | 'moderate' | 'low' | 'insufficient';
+
+export interface StructuredFinding {
+  id: string;
+  findingCode: string; // RadLex code if available
+  term: string; // Standardized term
   description: string;
-  location: string;
+  location: AnatomicalLocation;
+  laterality: 'right' | 'left' | 'bilateral' | 'midline' | 'not_applicable';
+  severity: SeverityLevel;
   confidence: number;
-  severity: "normal" | "abnormal" | "critical";
+  confidenceLevel: ConfidenceLevel;
+  measurements?: Measurement[];
+  associatedFindings?: string[];
+  differentialDiagnosis?: DifferentialDiagnosis[];
+  recommendations?: string[];
+  urgency: UrgencyLevel;
+  isActionable: boolean;
+  icd10Codes?: string[];
+  followUpInterval?: string;
 }
 
-interface ImageAnalysisResult {
-  type: string;
-  findings: Finding[];
-  impression: string;
-  confidence: number;
-  recommendations: string[];
+export interface AnatomicalLocation {
+  region: string;
+  subregion?: string;
+  structure?: string;
+  side?: 'right' | 'left' | 'bilateral';
+  coordinates?: {
+    slice?: number;
+    x?: number;
+    y?: number;
+  };
+}
+
+export interface Measurement {
+  type: 'length' | 'diameter' | 'volume' | 'area' | 'angle' | 'density' | 'other';
+  value: number;
+  unit: string;
+  method: string;
+  reference?: { min: number; max: number; mean: number };
+  isAbnormal: boolean;
+}
+
+export interface DifferentialDiagnosis {
+  condition: string;
+  icd10Code?: string;
+  probability: number;
+  supportingFeatures: string[];
+  againstFeatures: string[];
+  recommendedWorkup: string[];
+}
+
+export interface ImageAnalysisResult {
+  // Core analysis
   isMedicalImage: boolean;
   rejectionReason?: string;
-  technicalQuality?: string;
-  detailedAnalysis?: {
-    systematicReview?: string;
-    abnormalFindings?: string;
-    normalFindings?: string;
-    differentialConsiderations?: string;
-  };
-  teachingPoints?: string[];
-  clinicalCorrelation?: string;
-  followUp?: string;
+  modality: ModalityType;
+  studyType: string;
+  
+  // Quality assessment
+  technicalQuality: TechnicalQuality;
+  limitations: string[];
+  
+  // Structured findings
+  findings: StructuredFinding[];
+  normalFindings: string[];
+  abnormalFindings: string[];
+  
+  // Clinical synthesis
+  impression: string;
+  conclusion: string;
+  overallUrgency: UrgencyLevel;
+  overallSeverity: SeverityLevel;
+  overallConfidence: number;
+  
+  // Decision support
+  differentialDiagnoses: DifferentialDiagnosis[];
+  recommendations: ClinicalRecommendation[];
+  followUpRecommendations: FollowUpRecommendation[];
+  criticalAlerts: CriticalAlert[];
+  
+  // Classification (modality-specific)
+  biradsCategory?: number; // Mammogram/Breast US
+  tiradsCategory?: number; // Thyroid US
+  piradsCategory?: number; // Prostate MRI
+  liradsCategory?: number; // Liver MRI/CT
+  lungRadsCategory?: number; // Lung CT
+  
+  // Audit trail
+  analysisMetadata: AnalysisMetadata;
+  disclaimer: string;
 }
 
-// Initialize ZAI SDK
+export interface TechnicalQuality {
+  overallQuality: 'excellent' | 'good' | 'adequate' | 'suboptimal' | 'non_diagnostic';
+  positioning: 'optimal' | 'adequate' | 'suboptimal' | 'poor';
+  exposure: 'optimal' | 'adequate' | 'underexposed' | 'overexposed';
+  motion: 'none' | 'minimal' | 'moderate' | 'severe';
+  artifacts: Artifact[];
+  diagnostic: boolean;
+  limitationsForDiagnosis: string[];
+}
+
+export interface Artifact {
+  type: string;
+  severity: 'minor' | 'moderate' | 'severe';
+  impact: string;
+}
+
+export interface ClinicalRecommendation {
+  type: 'imaging' | 'laboratory' | 'procedure' | 'consultation' | 'medication' | 'follow_up';
+  priority: 'stat' | 'urgent' | 'routine';
+  recommendation: string;
+  rationale: string;
+  evidenceLevel: 'A' | 'B' | 'C' | 'expert_opinion';
+  acrAppropriateness?: number; // 1-9 scale
+}
+
+export interface FollowUpRecommendation {
+  timeframe: string;
+  modality: string;
+  indication: string;
+  comparisonAvailable: boolean;
+}
+
+export interface CriticalAlert {
+  alertId: string;
+  alertType: 'critical_finding' | 'urgent_finding' | 'stat_finding' | 'contraindication' | 'quality_issue';
+  finding: string;
+  description: string;
+  urgency: 'stat' | 'urgent';
+  requiredAction: string;
+  timeToAction: string;
+  notificationLevel: 'physician' | 'radiologist' | 'care_team' | 'rapid_response';
+}
+
+export interface AnalysisMetadata {
+  analysisId: string;
+  analyzedAt: string;
+  modelVersion: string;
+  analysisMode: 'ai_primary' | 'ai_assisted' | 'template_fallback';
+  processingTimeMs: number;
+  vlmUsed: boolean;
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
+// =============================================================================
+// MODALITY-SPECIFIC ANALYSIS PROTOCOLS
+// =============================================================================
+
+interface AnalysisProtocol {
+  modality: ModalityType;
+  displayName: string;
+  systematicReviewPattern: string[];
+  criticalFindings: CriticalFindingPattern[];
+  structuredReportTemplate: string;
+  classificationSystem?: string;
+  acrCode?: string;
+}
+
+interface CriticalFindingPattern {
+  name: string;
+  keywords: string[];
+  urgency: 'stat' | 'urgent' | 'routine';
+  requiredAction: string;
+  notificationLevel: 'physician' | 'radiologist' | 'care_team' | 'rapid_response';
+}
+
+const ANALYSIS_PROTOCOLS: Record<ModalityType, AnalysisProtocol> = {
+  // X-Ray Protocols
+  xray_chest: {
+    modality: 'xray_chest',
+    displayName: 'Chest X-Ray',
+    systematicReviewPattern: [
+      'Airway (tracheal position, carinal angle)',
+      'Bones (ribs, clavicles, scapulae, spine)',
+      'Cardiac (heart size, cardiothoracic ratio, borders, calcifications)',
+      'Diaphragm (position, contour, costophrenic angles)',
+      'Effusions/Soft tissues (pleural spaces, chest wall)',
+      'Fields (lung parenchyma, infiltrates, masses, nodules)',
+      'Foreign bodies/Devices (tubes, lines, implants)',
+    ],
+    criticalFindings: [
+      {
+        name: 'Pneumothorax',
+        keywords: ['pneumothorax', 'collapsed lung', 'air in pleural space', 'visceral pleural line'],
+        urgency: 'urgent',
+        requiredAction: 'Immediate clinical notification; consider chest tube placement',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Tension Pneumothorax',
+        keywords: ['tension pneumothorax', 'mediastinal shift', 'tracheal deviation', 'depressed diaphragm'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE needle decompression or chest tube; notify clinical team STAT',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Pleural Effusion (Large)',
+        keywords: ['large pleural effusion', 'complete opacification', 'white-out'],
+        urgency: 'urgent',
+        requiredAction: 'Clinical correlation; consider thoracentesis',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Cardiomegaly with Pulmonary Edema',
+        keywords: ['cardiomegaly', 'pulmonary edema', 'cardiac failure', 'alveolar edema', 'kerley lines'],
+        urgency: 'urgent',
+        requiredAction: 'Evaluate for acute heart failure; consider diuretics',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Pneumoperitoneum',
+        keywords: ['pneumoperitoneum', 'free air', 'free intraperitoneal air', 'rigler sign'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE surgical consultation; likely perforated viscus',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Mediastinal Widening',
+        keywords: ['mediastinal widening', 'widened mediastinum', 'aortic injury', 'aortic dissection'],
+        urgency: 'stat',
+        requiredAction: 'Consider aortic injury; CTA chest STAT if traumatic',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Endotracheal Tube Malposition',
+        keywords: ['endotracheal tube', 'mainstem intubation', 'extubation', 'tube position'],
+        urgency: 'urgent',
+        requiredAction: 'Verify tube position; clinical assessment',
+        notificationLevel: 'care_team',
+      },
+    ],
+    structuredReportTemplate: 'chest_xray',
+    acrCode: 'CPT 71046',
+  },
+  
+  xray_abdominal: {
+    modality: 'xray_abdominal',
+    displayName: 'Abdominal X-Ray (AXR)',
+    systematicReviewPattern: [
+      'Bowel gas pattern (distribution, distension, air-fluid levels)',
+      'Bowel wall (pneumatosis, thumbprinting)',
+      'Calcifications (renal, biliary, vascular, other)',
+      'Diaphragm (pneumoperitoneum)',
+      'Foreign bodies/Devices',
+      'Soft tissues (masses, organomegaly)',
+      'Skeleton (vertebrae, ribs, pelvis)',
+    ],
+    criticalFindings: [
+      {
+        name: 'Pneumoperitoneum',
+        keywords: ['pneumoperitoneum', 'free air', 'rigler sign', 'cupola sign', 'football sign'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE surgical consultation; perforated viscus likely',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Bowel Obstruction',
+        keywords: ['bowel obstruction', 'small bowel obstruction', 'SBO', 'transition point', 'closed loop'],
+        urgency: 'urgent',
+        requiredAction: 'Surgical consultation; NPO, NG tube; monitor for strangulation',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Pneumatosis Intestinalis',
+        keywords: ['pneumatosis', 'pneumatosis intestinalis', 'air in bowel wall', 'ischemic bowel'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE surgical consultation; ischemic bowel suspected',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'abdominal_xray',
+    acrCode: 'CPT 74000',
+  },
+  
+  xray_skeletal: {
+    modality: 'xray_skeletal',
+    displayName: 'Skeletal X-Ray',
+    systematicReviewPattern: [
+      'Cortex (continuity, fractures, lytic lesions)',
+      'Trabecular pattern (density, lesions)',
+      'Joint space (width, alignment, erosions)',
+      'Soft tissues (swelling, foreign bodies, calcifications)',
+      'Alignment (dislocation, subluxation)',
+      'Comparison views if available',
+    ],
+    criticalFindings: [
+      {
+        name: 'Open Fracture',
+        keywords: ['open fracture', 'compound fracture', 'communicating wound'],
+        urgency: 'urgent',
+        requiredAction: 'Orthopedic consultation; antibiotics; surgical debridement',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Compartment Syndrome',
+        keywords: ['compartment syndrome', 'severe swelling', 'tense compartment'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE orthopedic consultation; fasciotomy may be needed',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Pathological Fracture',
+        keywords: ['pathological fracture', 'lytic lesion', 'metastasis', 'tumor'],
+        urgency: 'urgent',
+        requiredAction: 'Oncology/Orthopedic consultation; further workup needed',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'skeletal_xray',
+    acrCode: 'CPT 73000',
+  },
+  
+  // CT Protocols
+  ct_head: {
+    modality: 'ct_head',
+    displayName: 'CT Head (Non-Contrast)',
+    systematicReviewPattern: [
+      'Parenchyma (attenuation, mass effect, midline shift)',
+      'Ventricles and Cisterns (size, compression, effacement)',
+      'Extra-axial spaces (hemorrhage, effusion, pneumocephalus)',
+      'Bone windows (fractures, lytic lesions)',
+      'Vascular (hyperdense vessel signs)',
+      'Brain Windows (stroke signs, hemorrhage, mass)',
+      'Soft tissues (scalp, face)',
+    ],
+    criticalFindings: [
+      {
+        name: 'Acute Intracranial Hemorrhage',
+        keywords: ['intracranial hemorrhage', 'ICH', 'intracerebral hemorrhage', 'intraparenchymal hemorrhage'],
+        urgency: 'stat',
+        requiredAction: 'Neurosurgery consultation; blood pressure management; reverse anticoagulation',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Acute Subdural Hematoma',
+        keywords: ['subdural hematoma', 'SDH', 'acute subdural'],
+        urgency: 'stat',
+        requiredAction: 'Neurosurgery consultation; monitor ICP; surgical evacuation if significant',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Acute Epidural Hematoma',
+        keywords: ['epidural hematoma', 'EDH', 'lenticular shape', 'middle meningeal artery'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE neurosurgery consultation; surgical evacuation typically required',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Subarachnoid Hemorrhage',
+        keywords: ['subarachnoid hemorrhage', 'SAH', 'blood in cisterns', 'thunderclap headache'],
+        urgency: 'stat',
+        requiredAction: 'CTA to identify aneurysm; neurosurgery; nimodipine; prevent vasospasm',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Large Vessel Stroke (Hyperdense MCA)',
+        keywords: ['hyperdense MCA', 'MCA occlusion', 'thrombus', 'early stroke signs'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE stroke protocol; consider thrombectomy candidate; tPA if appropriate',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Mass Effect with Herniation',
+        keywords: ['herniation', 'uncal herniation', 'tonsillar herniation', 'midline shift'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE neurosurgery; mannitol/hypertonic saline; ICP management',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Hydrocephalus',
+        keywords: ['hydrocephalus', 'ventriculomegaly', 'enlarged ventricles'],
+        urgency: 'urgent',
+        requiredAction: 'Neurosurgery evaluation; may need EVD or shunt',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'ct_head',
+    acrCode: 'CPT 70450',
+  },
+  
+  ct_chest: {
+    modality: 'ct_chest',
+    displayName: 'CT Chest',
+    systematicReviewPattern: [
+      'Lungs (nodules, masses, infiltrates, emphysema, fibrosis)',
+      'Airways (bronchiectasis, stenosis, mucus plugging)',
+      'Pleura (effusion, thickening, pneumothorax)',
+      'Mediastinum (lymph nodes, masses, vessels)',
+      'Heart and Pericardium (size, effusion, calcifications)',
+      'Chest Wall (soft tissue, bones)',
+      'Upper Abdomen (incidental findings)',
+    ],
+    criticalFindings: [
+      {
+        name: 'Pulmonary Embolism',
+        keywords: ['pulmonary embolism', 'PE', 'filling defect', 'saddle embolus'],
+        urgency: 'urgent',
+        requiredAction: 'Anticoagulation; consider thrombolytics if massive; ICU admission',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Aortic Dissection',
+        keywords: ['aortic dissection', 'intimal flap', 'dissection', 'Stanford type'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE vascular surgery/cardiology; type A needs surgery; blood pressure control',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Lung Mass/Malignancy',
+        keywords: ['lung mass', 'malignancy', 'spiculated nodule', 'suspicious nodule'],
+        urgency: 'urgent',
+        requiredAction: 'Pulmonology/Oncology referral; tissue diagnosis needed; staging workup',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Tension Pneumothorax',
+        keywords: ['tension pneumothorax', 'mediastinal shift', 'compressive atelectasis'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE needle decompression or chest tube',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'ct_chest',
+    classificationSystem: 'Lung-RADS',
+    acrCode: 'CPT 71250',
+  },
+  
+  // MRI Protocols
+  mri_brain: {
+    modality: 'mri_brain',
+    displayName: 'MRI Brain',
+    systematicReviewPattern: [
+      'T1 (anatomy, mass effect, enhancement)',
+      'T2/FLAIR (edema, demyelination, lesions)',
+      'DWI/ADC (acute infarct, abscess, tumor)',
+      'SWI/GRE (hemorrhage, calcification)',
+      'MRA (vascular anatomy, stenosis, aneurysm)',
+      'Post-contrast (enhancement pattern)',
+      'Ventricles and Cisterns',
+    ],
+    criticalFindings: [
+      {
+        name: 'Acute Stroke (DWI Positive)',
+        keywords: ['acute stroke', 'DWI restriction', 'diffusion restriction', 'acute infarct'],
+        urgency: 'stat',
+        requiredAction: 'Stroke team activation; consider thrombectomy if within window',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Brain Tumor',
+        keywords: ['brain tumor', 'mass', 'glioma', 'metastasis', 'enhancing lesion'],
+        urgency: 'urgent',
+        requiredAction: 'Neurosurgery/Oncology referral; tissue diagnosis; staging',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Cavernous Malformation',
+        keywords: ['cavernous malformation', 'cavernoma', 'cavernous angioma'],
+        urgency: 'urgent',
+        requiredAction: 'Neurosurgery referral if symptomatic or high bleed risk location',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Multiple Sclerosis',
+        keywords: ['multiple sclerosis', 'MS', 'demyelinating lesions', 'periventricular lesions'],
+        urgency: 'routine',
+        requiredAction: 'Neurology referral; McDonald criteria application; DMT consideration',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'mri_brain',
+    acrCode: 'CPT 70551',
+  },
+  
+  // Ultrasound Protocols
+  us_abdominal: {
+    modality: 'us_abdominal',
+    displayName: 'Abdominal Ultrasound',
+    systematicReviewPattern: [
+      'Liver (size, echogenicity, focal lesions, vascular flow)',
+      'Gallbladder (stones, wall thickness, pericholecystic fluid)',
+      'Biliary Tree (CBD diameter, stones, dilation)',
+      'Pancreas (size, echogenicity, masses, duct)',
+      'Spleen (size, focal lesions)',
+      'Kidneys (size, echogenicity, hydronephrosis, masses)',
+      'Aorta and IVC (diameter, thrombus)',
+      'Free Fluid',
+    ],
+    criticalFindings: [
+      {
+        name: 'Acute Cholecystitis',
+        keywords: ['acute cholecystitis', 'gallbladder wall thickening', 'pericholecystic fluid', 'murphy sign'],
+        urgency: 'urgent',
+        requiredAction: 'Surgery consultation; antibiotics; cholecystectomy',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Abdominal Aortic Aneurysm',
+        keywords: ['abdominal aortic aneurysm', 'AAA', 'aortic dilation', 'aortic diameter >3cm'],
+        urgency: 'urgent',
+        requiredAction: 'Vascular surgery referral; monitor if <5.5cm; surgery if symptomatic or >5.5cm',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Hydronephrosis',
+        keywords: ['hydronephrosis', 'pelvicalyceal dilation', 'obstruction'],
+        urgency: 'urgent',
+        requiredAction: 'Evaluate for obstruction; urology referral; consider stent/nephrostomy',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'us_abdominal',
+    acrCode: 'CPT 76700',
+  },
+  
+  us_thyroid: {
+    modality: 'us_thyroid',
+    displayName: 'Thyroid Ultrasound',
+    systematicReviewPattern: [
+      'Thyroid size and volume',
+      'Parenchymal echogenicity and texture',
+      'Nodules (size, composition, echogenicity, margins, calcifications)',
+      'Vascularity (color Doppler)',
+      'Cervical lymph nodes',
+      'Surrounding structures',
+    ],
+    criticalFindings: [
+      {
+        name: 'Suspicious Thyroid Nodule',
+        keywords: ['suspicious nodule', 'TI-RADS 5', 'irregular margins', 'microcalcifications', 'taller-than-wide'],
+        urgency: 'urgent',
+        requiredAction: 'Endocrine/ENT referral; FNA recommended',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'us_thyroid',
+    classificationSystem: 'TI-RADS',
+    acrCode: 'CPT 76536',
+  },
+  
+  us_cardiac: {
+    modality: 'us_cardiac',
+    displayName: 'Echocardiogram',
+    systematicReviewPattern: [
+      'LV Size and Function (EF, wall motion)',
+      'RV Size and Function',
+      'Atrial Size',
+      'Valves (morphology, function, gradients)',
+      'Pericardium (effusion, tamponade physiology)',
+      'Great Vessels',
+      'Diastolic Function Parameters',
+    ],
+    criticalFindings: [
+      {
+        name: 'Cardiac Tamponade',
+        keywords: ['tamponade', 'pericardial effusion', 'RA/RV collapse', 'respiratory variation'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE pericardiocentesis; cardiology STAT',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Severe LV Dysfunction',
+        keywords: ['severe LV dysfunction', 'EF <30%', 'cardiogenic shock'],
+        urgency: 'urgent',
+        requiredAction: 'Cardiology admission; consider inotropes; evaluate for PCI/CABG',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Valve Vegetations',
+        keywords: ['vegetation', 'endocarditis', 'valve vegetation'],
+        urgency: 'urgent',
+        requiredAction: 'Blood cultures; cardiology/infectious disease; antibiotics; TEE',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Aortic Dissection',
+        keywords: ['aortic dissection', 'dissection flap', 'ascending aorta dilation'],
+        urgency: 'stat',
+        requiredAction: 'IMMEDIATE CT angiogram; vascular surgery; blood pressure control',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'us_cardiac',
+    acrCode: 'CPT 93306',
+  },
+  
+  us_obstetric: {
+    modality: 'us_obstetric',
+    displayName: 'Obstetric Ultrasound',
+    systematicReviewPattern: [
+      'Gestational Sac (location, size)',
+      'Fetal Number and Viability',
+      'Fetal Biometry (CRL, BPD, HC, AC, FL)',
+      'Amniotic Fluid Volume',
+      'Placenta (location, grade, previa)',
+      'Fetal Anatomy Survey',
+      'Cervical Length',
+    ],
+    criticalFindings: [
+      {
+        name: 'Ectopic Pregnancy',
+        keywords: ['ectopic pregnancy', 'adnexal mass', 'empty uterus', 'free fluid'],
+        urgency: 'stat',
+        requiredAction: 'OB/GYN STAT; methotrexate or surgical management',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Placental Abruption',
+        keywords: ['abruption', 'retroplacental bleed', 'placental separation'],
+        urgency: 'stat',
+        requiredAction: 'OB/GYN STAT; fetal monitoring; delivery likely indicated',
+        notificationLevel: 'rapid_response',
+      },
+      {
+        name: 'Placenta Previa',
+        keywords: ['placenta previa', 'low-lying placenta', 'covering os'],
+        urgency: 'urgent',
+        requiredAction: 'OB/GYN notification; pelvic rest; C-section planning',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Fetal Demise',
+        keywords: ['fetal demise', 'no cardiac activity', 'intrauterine fetal death'],
+        urgency: 'urgent',
+        requiredAction: 'OB/GYN notification; delivery planning; genetic workup',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'us_obstetric',
+    acrCode: 'CPT 76801',
+  },
+  
+  us_vascular: {
+    modality: 'us_vascular',
+    displayName: 'Vascular Ultrasound',
+    systematicReviewPattern: [
+      'Vein compressibility',
+      'Intraluminal filling defects',
+      'Flow characteristics (phasicity, augmentation)',
+      'Valve function',
+      'Arterial flow velocities',
+      'Plaque characterization',
+    ],
+    criticalFindings: [
+      {
+        name: 'Deep Vein Thrombosis',
+        keywords: ['DVT', 'deep vein thrombosis', 'non-compressible', 'thrombus'],
+        urgency: 'urgent',
+        requiredAction: 'Anticoagulation; consider IVC filter if contraindicated',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Arterial Occlusion',
+        keywords: ['arterial occlusion', 'no flow', 'acute limb ischemia'],
+        urgency: 'stat',
+        requiredAction: 'Vascular surgery STAT; thrombectomy/thrombolysis',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'us_vascular',
+    acrCode: 'CPT 93970',
+  },
+  
+  // Mammogram Protocol
+  mammogram: {
+    modality: 'mammogram',
+    displayName: 'Mammogram',
+    systematicReviewPattern: [
+      'Breast Density (A, B, C, D)',
+      'Masses (shape, margin, density)',
+      'Calcifications (morphology, distribution)',
+      'Architectural Distortion',
+      'Asymmetries',
+      'Skin and Nipple Changes',
+      'Lymph Nodes',
+    ],
+    criticalFindings: [
+      {
+        name: 'Suspicious Mass',
+        keywords: ['irregular mass', 'spiculated mass', 'suspicious mass', 'BI-RADS 4', 'BI-RADS 5'],
+        urgency: 'urgent',
+        requiredAction: 'Breast clinic referral; biopsy recommended',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Suspicious Calcifications',
+        keywords: ['pleomorphic calcifications', 'amorphous calcifications', 'suspicious calcifications'],
+        urgency: 'urgent',
+        requiredAction: 'Stereotactic biopsy recommended',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'mammogram',
+    classificationSystem: 'BI-RADS',
+    acrCode: 'CPT 77067',
+  },
+  
+  // PET-CT Protocol
+  pet_ct: {
+    modality: 'pet_ct',
+    displayName: 'PET-CT',
+    systematicReviewPattern: [
+      'FDG Uptake Distribution',
+      'Primary Lesion Assessment',
+      'Lymph Node Evaluation',
+      'Distant Metastases Search',
+      'SUV Measurements',
+      'CT Correlation',
+      'Physiologic Uptake Verification',
+    ],
+    criticalFindings: [
+      {
+        name: 'New Malignancy',
+        keywords: ['hypermetabolic lesion', 'FDG avid', 'malignancy', 'SUV elevated'],
+        urgency: 'urgent',
+        requiredAction: 'Oncology referral; tissue diagnosis; staging',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'pet_ct',
+    acrCode: 'CPT 78815',
+  },
+  
+  // DEXA Protocol
+  dexa: {
+    modality: 'dexa',
+    displayName: 'DEXA Scan',
+    systematicReviewPattern: [
+      'Lumbar Spine BMD (L1-L4)',
+      'Hip BMD (Femoral Neck, Total Hip)',
+      'T-Scores (comparison to young adult)',
+      'Z-Scores (comparison to age-matched)',
+      'Vertebral Fracture Assessment',
+      'Technical Quality',
+    ],
+    criticalFindings: [
+      {
+        name: 'Osteoporosis',
+        keywords: ['osteoporosis', 'T-score < -2.5'],
+        urgency: 'routine',
+        requiredAction: 'Endocrinology/Rheumatology referral; osteoporosis treatment initiation',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'dexa',
+    acrCode: 'CPT 77080',
+  },
+  
+  // Angiography Protocol
+  angio: {
+    modality: 'angio',
+    displayName: 'Angiography',
+    systematicReviewPattern: [
+      'Vessel Patency',
+      'Stenosis Quantification',
+      'Occlusions',
+      'Collateral Flow',
+      'Aneurysms',
+      'Dissections',
+      'AV Malformations',
+    ],
+    criticalFindings: [
+      {
+        name: 'Critical Stenosis',
+        keywords: ['critical stenosis', '>70% stenosis', 'severe stenosis'],
+        urgency: 'urgent',
+        requiredAction: 'Interventional cardiology/radiology; revascularization consideration',
+        notificationLevel: 'physician',
+      },
+      {
+        name: 'Acute Occlusion',
+        keywords: ['acute occlusion', 'thrombus', 'embolus'],
+        urgency: 'stat',
+        requiredAction: 'Thrombectomy/thrombolysis; restore flow',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'angio',
+    acrCode: 'CPT 75746',
+  },
+  
+  // Fluoroscopy Protocol
+  fluoro: {
+    modality: 'fluoro',
+    displayName: 'Fluoroscopy',
+    systematicReviewPattern: [
+      'Contrast Transit',
+      'Lumen Diameter',
+      'Filling Defects',
+      'Extravasation',
+      'Motility',
+      'Anatomic Abnormalities',
+    ],
+    criticalFindings: [
+      {
+        name: 'Perforation',
+        keywords: ['perforation', 'extravasation', 'contrast leak'],
+        urgency: 'stat',
+        requiredAction: 'Surgical consultation; NPO; antibiotics',
+        notificationLevel: 'rapid_response',
+      },
+    ],
+    structuredReportTemplate: 'fluoro',
+    acrCode: 'CPT 74240',
+  },
+  
+  // Nuclear Medicine Protocol
+  nuclear: {
+    modality: 'nuclear',
+    displayName: 'Nuclear Medicine',
+    systematicReviewPattern: [
+      'Radiotracer Distribution',
+      'Physiologic Uptake Pattern',
+      'Focal Abnormalities',
+      'Quantitative Parameters',
+      'Comparison with Prior Studies',
+    ],
+    criticalFindings: [
+      {
+        name: 'Hot Nodule (Thyroid)',
+        keywords: ['hot nodule', 'autonomous nodule', 'hyperfunctioning nodule'],
+        urgency: 'routine',
+        requiredAction: 'Endocrinology referral; low malignancy risk',
+        notificationLevel: 'physician',
+      },
+    ],
+    structuredReportTemplate: 'nuclear',
+    acrCode: 'CPT 78000',
+  },
+  
+  // Default/Other
+  other: {
+    modality: 'other',
+    displayName: 'Medical Image',
+    systematicReviewPattern: [
+      'Image Quality Assessment',
+      'Structure Identification',
+      'Abnormality Detection',
+      'Clinical Correlation',
+    ],
+    criticalFindings: [],
+    structuredReportTemplate: 'default',
+    acrCode: '',
+  },
+  
+  // Additional placeholders for brevity
+  xray_spine: {
+    modality: 'xray_spine',
+    displayName: 'Spine X-Ray',
+    systematicReviewPattern: ['Vertebral alignment', 'Disc spaces', 'Vertebral bodies', 'Soft tissues'],
+    criticalFindings: [],
+    structuredReportTemplate: 'spine_xray',
+    acrCode: 'CPT 72040',
+  },
+  xray_extremity: {
+    modality: 'xray_extremity',
+    displayName: 'Extremity X-Ray',
+    systematicReviewPattern: ['Bones', 'Joints', 'Soft tissues', 'Alignment'],
+    criticalFindings: [],
+    structuredReportTemplate: 'extremity_xray',
+    acrCode: 'CPT 73030',
+  },
+  ct_abdomen: {
+    modality: 'ct_abdomen',
+    displayName: 'CT Abdomen',
+    systematicReviewPattern: ['Liver', 'Spleen', 'Pancreas', 'Kidneys', 'Bowel', 'Vessels', 'Lymph nodes'],
+    criticalFindings: [],
+    structuredReportTemplate: 'ct_abdomen',
+    acrCode: 'CPT 74177',
+  },
+  ct_pelvis: {
+    modality: 'ct_pelvis',
+    displayName: 'CT Pelvis',
+    systematicReviewPattern: ['Pelvic organs', 'Bowel', 'Lymph nodes', 'Vessels', 'Bones'],
+    criticalFindings: [],
+    structuredReportTemplate: 'ct_pelvis',
+    acrCode: 'CPT 72193',
+  },
+  ct_spine: {
+    modality: 'ct_spine',
+    displayName: 'CT Spine',
+    systematicReviewPattern: ['Vertebrae', 'Discs', 'Canal', 'Foramina', 'Soft tissues'],
+    criticalFindings: [],
+    structuredReportTemplate: 'ct_spine',
+    acrCode: 'CPT 72128',
+  },
+  ct_angio: {
+    modality: 'ct_angio',
+    displayName: 'CT Angiography',
+    systematicReviewPattern: ['Vessels', 'Stenosis', 'Aneurysms', 'Dissections', 'Embolism'],
+    criticalFindings: [],
+    structuredReportTemplate: 'ct_angio',
+    acrCode: 'CPT 75746',
+  },
+  ct_other: {
+    modality: 'ct_other',
+    displayName: 'CT Other',
+    systematicReviewPattern: ['Systematic review'],
+    criticalFindings: [],
+    structuredReportTemplate: 'default',
+    acrCode: 'CPT 71250',
+  },
+  mri_spine: {
+    modality: 'mri_spine',
+    displayName: 'MRI Spine',
+    systematicReviewPattern: ['Vertebrae', 'Discs', 'Cord', 'Nerve roots', 'Soft tissues'],
+    criticalFindings: [],
+    structuredReportTemplate: 'mri_spine',
+    acrCode: 'CPT 72141',
+  },
+  mri_musculoskeletal: {
+    modality: 'mri_musculoskeletal',
+    displayName: 'MRI Musculoskeletal',
+    systematicReviewPattern: ['Bones', 'Joints', 'Ligaments', 'Tendons', 'Muscles', 'Cartilage'],
+    criticalFindings: [],
+    structuredReportTemplate: 'mri_msk',
+    acrCode: 'CPT 73221',
+  },
+  mri_cardiac: {
+    modality: 'mri_cardiac',
+    displayName: 'Cardiac MRI',
+    systematicReviewPattern: ['Chambers', 'Function', 'Valves', 'Myocardium', 'Pericardium'],
+    criticalFindings: [],
+    structuredReportTemplate: 'mri_cardiac',
+    acrCode: 'CPT 75561',
+  },
+  mri_abdomen: {
+    modality: 'mri_abdomen',
+    displayName: 'MRI Abdomen',
+    systematicReviewPattern: ['Liver', 'Pancreas', 'Kidneys', 'Spleen', 'Vessels'],
+    criticalFindings: [],
+    structuredReportTemplate: 'mri_abdomen',
+    acrCode: 'CPT 74181',
+  },
+  mri_pelvis: {
+    modality: 'mri_pelvis',
+    displayName: 'MRI Pelvis',
+    systematicReviewPattern: ['Pelvic organs', 'Lymph nodes', 'Bones', 'Soft tissues'],
+    criticalFindings: [],
+    structuredReportTemplate: 'mri_pelvis',
+    acrCode: 'CPT 72195',
+  },
+  mri_other: {
+    modality: 'mri_other',
+    displayName: 'MRI Other',
+    systematicReviewPattern: ['Systematic review'],
+    criticalFindings: [],
+    structuredReportTemplate: 'default',
+    acrCode: 'CPT 70551',
+  },
+  us_musculoskeletal: {
+    modality: 'us_musculoskeletal',
+    displayName: 'MSK Ultrasound',
+    systematicReviewPattern: ['Tendons', 'Ligaments', 'Muscles', 'Joints', 'Soft tissues'],
+    criticalFindings: [],
+    structuredReportTemplate: 'us_msk',
+    acrCode: 'CPT 76881',
+  },
+  us_other: {
+    modality: 'us_other',
+    displayName: 'Ultrasound Other',
+    systematicReviewPattern: ['Systematic review'],
+    criticalFindings: [],
+    structuredReportTemplate: 'default',
+    acrCode: 'CPT 76700',
+  },
+};
+
+// =============================================================================
+// VLM PROMPT TEMPLATES
+// =============================================================================
+
+function generateModalitySpecificPrompt(
+  modality: ModalityType,
+  protocol: AnalysisProtocol,
+  clinicalContext?: string,
+  patientInfo?: { age?: number; sex?: string; indications?: string }
+): string {
+  const systematicReview = protocol.systematicReviewPattern
+    .map((item, i) => `${i + 1}. ${item}`)
+    .join('\n');
+  
+  const criticalFindingsList = protocol.criticalFindings
+    .map(f => `- ${f.name}: ${f.keywords.join(', ')}`)
+    .join('\n');
+  
+  return `You are a board-certified radiologist AI assistant with subspecialty expertise. Analyze this ${protocol.displayName} using structured reporting methodology.
+
+## ANALYSIS PROTOCOL: ${protocol.displayName}
+
+### SYSTEMATIC REVIEW PATTERN (Assess each region in order):
+${systematicReview}
+
+### CRITICAL FINDINGS TO DETECT (Flag as URGENT/STAT if present):
+${criticalFindingsList || 'None specific to this modality'}
+
+${patientInfo ? `### PATIENT INFORMATION:
+- Age: ${patientInfo.age || 'Unknown'}
+- Sex: ${patientInfo.sex || 'Unknown'}
+- Clinical Indication: ${patientInfo.indications || 'Not provided'}` : ''}
+
+${clinicalContext ? `### CLINICAL CONTEXT:
+${clinicalContext}` : ''}
+
+${protocol.classificationSystem ? `### CLASSIFICATION SYSTEM: ${protocol.classificationSystem}
+Apply appropriate classification criteria and report the category.` : ''}
+
+## RESPONSE REQUIREMENTS:
+
+1. FIRST: Determine if this is a valid medical imaging study of the expected modality
+2. If NOT a medical image, return rejection with reason
+3. If IS a medical image, perform systematic analysis
+
+## OUTPUT FORMAT (JSON only):
+
+{
+  "isMedicalImage": true,
+  "modality": "${modality}",
+  "studyType": "exact study type description",
+  "technicalQuality": {
+    "overallQuality": "excellent|good|adequate|suboptimal|non_diagnostic",
+    "positioning": "optimal|adequate|suboptimal|poor",
+    "exposure": "optimal|adequate|underexposed|overexposed",
+    "motion": "none|minimal|moderate|severe",
+    "artifacts": [{"type": "artifact type", "severity": "minor|moderate|severe", "impact": "description"}],
+    "diagnostic": true,
+    "limitationsForDiagnosis": ["limitation 1"]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "findingCode": "RadLex code if known",
+      "term": "standardized term",
+      "description": "detailed description",
+      "location": {"region": "anatomical region", "subregion": "subregion", "side": "right|left|bilateral"},
+      "laterality": "right|left|bilateral|midline|not_applicable",
+      "severity": "normal|benign|likely_benign|indeterminate|suspicious|malignant|critical",
+      "confidence": 0.85,
+      "confidenceLevel": "high|moderate|low|insufficient",
+      "measurements": [{"type": "length", "value": 2.5, "unit": "cm", "method": "manual", "isAbnormal": false}],
+      "urgency": "routine|urgent|critical|stat",
+      "isActionable": true
+    }
+  ],
+  "normalFindings": ["structured list of normal findings"],
+  "abnormalFindings": ["structured list of abnormal findings"],
+  "impression": "concise clinical impression",
+  "conclusion": "diagnostic conclusion",
+  "overallUrgency": "routine|urgent|critical|stat",
+  "overallSeverity": "normal|benign|likely_benign|indeterminate|suspicious|malignant|critical",
+  "overallConfidence": 0.85,
+  "differentialDiagnoses": [
+    {
+      "condition": "diagnosis name",
+      "probability": 0.70,
+      "supportingFeatures": ["feature 1"],
+      "againstFeatures": ["feature 1"],
+      "recommendedWorkup": ["test 1"]
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "imaging|laboratory|procedure|consultation|medication|follow_up",
+      "priority": "stat|urgent|routine",
+      "recommendation": "specific recommendation",
+      "rationale": "evidence-based rationale",
+      "evidenceLevel": "A|B|C|expert_opinion",
+      "acrAppropriateness": 9
+    }
+  ],
+  "criticalAlerts": [
+    {
+      "alertId": "ALERT-001",
+      "alertType": "critical_finding",
+      "finding": "finding name",
+      "description": "detailed description",
+      "urgency": "stat|urgent",
+      "requiredAction": "immediate action needed",
+      "timeToAction": "within 30 minutes",
+      "notificationLevel": "rapid_response|physician|radiologist|care_team"
+    }
+  ],
+  "followUpRecommendations": [
+    {"timeframe": "3 months", "modality": "CT chest", "indication": "nodule follow-up"}
+  ]
+  ${protocol.classificationSystem ? `, "${protocol.classificationSystem.toLowerCase().replace('-', '_')}Category": 1` : ''}
+}
+
+## CRITICAL RULES:
+1. Use standardized medical terminology (RadLex where applicable)
+2. Be thorough but conservative - do not overcall findings
+3. Always include appropriate clinical disclaimers
+4. Flag ANY critical/urgent findings immediately
+5. Provide actionable recommendations with evidence levels
+6. If image quality limits diagnosis, state clearly
+7. Respond with ONLY valid JSON, no markdown formatting`;
+}
+
+// =============================================================================
+// MAIN ANALYSIS ENGINE
+// =============================================================================
+
 let zaiInstance: Awaited<ReturnType<typeof ZAI.create>> | null = null;
 
 async function getZAI() {
@@ -39,905 +1153,352 @@ async function getZAI() {
   return zaiInstance;
 }
 
-// Fallback predefined findings for when VLM API is unavailable
-const FALLBACK_FINDINGS: Record<string, { findings: Finding[]; impression: string; recommendations: string[]; teachingPoints: string[] }> = {
-  "chest-xray": {
-    findings: [
-      { description: "Cardiac silhouette within normal limits, cardiothoracic ratio approximately 0.5", location: "Cardiac", confidence: 0.92, severity: "normal" },
-      { description: "Lungs are clear bilaterally without infiltrates, masses, or effusions", location: "Pulmonary", confidence: 0.89, severity: "normal" },
-      { description: "No pleural effusion or pneumothorax identified", location: "Pleural", confidence: 0.94, severity: "normal" },
-      { description: "Trachea is midline, no mediastinal shift", location: "Mediastinum", confidence: 0.91, severity: "normal" },
-      { description: "Bony structures including ribs and clavicles appear intact", location: "Musculoskeletal", confidence: 0.90, severity: "normal" },
-    ],
-    impression: "No acute cardiopulmonary abnormality. Cardiac silhouette and pulmonary vascularity within normal limits for patient age. No active disease process identified.",
-    recommendations: [
-      "Clinical correlation with patient symptoms recommended",
-      "Consider comparison with prior studies if available",
-      "Follow-up imaging as clinically indicated",
-    ],
-    teachingPoints: [
-      "Always systematically review all anatomical regions: lungs, heart, mediastinum, bones, and soft tissues",
-      "Check for subtle findings such as small effusions or early infiltrates",
-      "Ensure proper exposure and positioning for diagnostic quality",
-    ],
-  },
-  "xray-extremity": {
-    findings: [
-      { description: "No acute fracture or dislocation identified", location: "Skeletal", confidence: 0.91, severity: "normal" },
-      { description: "Joint spaces are preserved", location: "Articular", confidence: 0.88, severity: "normal" },
-      { description: "Soft tissues appear unremarkable", location: "Soft Tissue", confidence: 0.85, severity: "normal" },
-      { description: "Normal bone mineralization", location: "Bone", confidence: 0.87, severity: "normal" },
-    ],
-    impression: "No acute osseous abnormality. Joint spaces and soft tissues within normal limits.",
-    recommendations: [
-      "Clinical correlation with physical examination findings",
-      "Consider advanced imaging if symptoms persist",
-    ],
-    teachingPoints: [
-      "Obtain at least two orthogonal views for fracture evaluation",
-      "Check for subtle cortical breaks and joint effusions",
-      "Compare with contralateral side if needed",
-    ],
-  },
-  "xray-spine": {
-    findings: [
-      { description: "Normal vertebral body height and alignment", location: "Spine", confidence: 0.92, severity: "normal" },
-      { description: "Disc spaces are maintained", location: "Intervertebral", confidence: 0.88, severity: "normal" },
-      { description: "No obvious fractures or lytic lesions", location: "Vertebrae", confidence: 0.90, severity: "normal" },
-      { description: "Prevertebral soft tissues within normal limits", location: "Soft Tissue", confidence: 0.86, severity: "normal" },
-    ],
-    impression: "No acute vertebral abnormality. Normal alignment and disc spaces.",
-    recommendations: [
-      "Clinical correlation with neurological examination",
-      "Consider MRI if radiculopathy symptoms present",
-    ],
-    teachingPoints: [
-      "Evaluate vertebral alignment on lateral view",
-      "Check for step-off deformities suggesting spondylolisthesis",
-      "Assess prevertebral soft tissue width for retropharyngeal masses",
-    ],
-  },
-  "xray-abdominal": {
-    findings: [
-      { description: "No abnormal calcifications identified", location: "Abdomen", confidence: 0.89, severity: "normal" },
-      { description: "No evidence of bowel obstruction", location: "GI Tract", confidence: 0.91, severity: "normal" },
-      { description: "Normal bowel gas pattern", location: "Intestines", confidence: 0.87, severity: "normal" },
-      { description: "No free air under the diaphragm", location: "Peritoneal", confidence: 0.94, severity: "normal" },
-    ],
-    impression: "Unremarkable abdominal radiograph. No evidence of obstruction, perforation, or abnormal calcifications.",
-    recommendations: [
-      "Clinical correlation with abdominal examination",
-      "Consider CT abdomen for further evaluation if symptoms persist",
-    ],
-    teachingPoints: [
-      "Look for pneumoperitoneum under the right hemidiaphragm",
-      "Evaluate bowel gas pattern for obstruction signs",
-      "Check for abnormal calcifications (renal, biliary, vascular)",
-    ],
-  },
-  "ct-scan": {
-    findings: [
-      { description: "No acute intracranial abnormality identified", location: "Brain Parenchyma", confidence: 0.93, severity: "normal" },
-      { description: "Ventricles are normal in size and configuration", location: "Ventricular System", confidence: 0.91, severity: "normal" },
-      { description: "No focal mass lesion, hemorrhage, or midline shift", location: "Brain", confidence: 0.94, severity: "normal" },
-      { description: "Basal cisterns are patent without effacement", location: "CSF Spaces", confidence: 0.90, severity: "normal" },
-      { description: "Calvarium appears intact without acute fracture", location: "Skull", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Unremarkable CT examination of the head. No acute intracranial abnormality, mass effect, or midline shift identified.",
-    recommendations: [
-      "Clinical correlation with neurological examination recommended",
-      "Consider follow-up imaging if symptoms persist or worsen",
-    ],
-    teachingPoints: [
-      "CT is superior for detecting acute hemorrhage and fractures",
-      "Always check window settings: brain, bone, and subdural windows",
-      "Look for early signs of stroke such as hyperdense MCA sign",
-    ],
-  },
-  "ct-chest": {
-    findings: [
-      { description: "No pulmonary nodules or masses identified", location: "Lungs", confidence: 0.91, severity: "normal" },
-      { description: "No mediastinal or hilar lymphadenopathy", location: "Mediastinum", confidence: 0.90, severity: "normal" },
-      { description: "Heart size within normal limits", location: "Cardiac", confidence: 0.88, severity: "normal" },
-      { description: "No pleural effusion or thickening", location: "Pleura", confidence: 0.92, severity: "normal" },
-      { description: "No suspicious bone lesions", location: "Thoracic Skeleton", confidence: 0.89, severity: "normal" },
-    ],
-    impression: "No acute intrathoracic abnormality. Lungs are clear without nodules or masses.",
-    recommendations: [
-      "Clinical correlation with presenting symptoms",
-      "Consider follow-up imaging per clinical indication",
-    ],
-    teachingPoints: [
-      "Use lung windows for parenchymal evaluation",
-      "Check all lung segments systematically",
-      "Correlate with chest X-ray for comprehensive evaluation",
-    ],
-  },
-  "ct-head": {
-    findings: [
-      { description: "No acute intracranial hemorrhage", location: "Brain", confidence: 0.95, severity: "normal" },
-      { description: "Normal gray-white matter differentiation", location: "Cerebrum", confidence: 0.92, severity: "normal" },
-      { description: "Ventricles and sulci are normal in size", location: "CSF Spaces", confidence: 0.90, severity: "normal" },
-      { description: "No midline shift or mass effect", location: "Brain", confidence: 0.93, severity: "normal" },
-      { description: "Skull vault intact", location: "Calvarium", confidence: 0.94, severity: "normal" },
-    ],
-    impression: "Unremarkable CT head. No acute intracranial pathology.",
-    recommendations: [
-      "Clinical correlation with neurological status",
-      "Consider MRI for further evaluation if needed",
-    ],
-    teachingPoints: [
-      "Acute blood appears hyperdense on non-contrast CT",
-      "Check for early ischemic changes in stroke patients",
-      "Evaluate cisterns for signs of increased ICP",
-    ],
-  },
-  "ct-spine": {
-    findings: [
-      { description: "No vertebral fractures identified", location: "Spine", confidence: 0.94, severity: "normal" },
-      { description: "Normal vertebral alignment", location: "Spinal Column", confidence: 0.92, severity: "normal" },
-      { description: "No spinal canal stenosis", location: "Spinal Canal", confidence: 0.90, severity: "normal" },
-      { description: "Disc spaces are maintained", location: "Intervertebral Discs", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "No acute spinal abnormality. Normal vertebral alignment and canal diameter.",
-    recommendations: [
-      "Clinical correlation with neurological examination",
-      "Consider MRI if cord compression suspected",
-    ],
-    teachingPoints: [
-      "Evaluate all vertebral bodies in sagittal and axial planes",
-      "Check for retropulsed fragments in burst fractures",
-      "Assess soft tissue window for hematoma",
-    ],
-  },
-  "ct-angiography": {
-    findings: [
-      { description: "Coronary arteries are patent without significant stenosis", location: "Coronary Arteries", confidence: 0.91, severity: "normal" },
-      { description: "No significant plaque burden identified", location: "Coronary Vessels", confidence: 0.89, severity: "normal" },
-      { description: "Normal cardiac chamber sizes", location: "Heart", confidence: 0.92, severity: "normal" },
-      { description: "Pulmonary arteries are clear without emboli", location: "Pulmonary Vasculature", confidence: 0.93, severity: "normal" },
-    ],
-    impression: "Normal coronary CT angiogram. No significant coronary artery disease or pulmonary embolism.",
-    recommendations: [
-      "Risk factor modification as indicated",
-      "Follow-up per cardiology recommendations",
-    ],
-    teachingPoints: [
-      "Evaluate all major coronary vessels systematically",
-      "Use multiplanar reconstructions for stenosis assessment",
-      "Check for non-cardiac findings in the field of view",
-    ],
-  },
-  "mri-brain": {
-    findings: [
-      { description: "Normal brain parenchymal signal intensity on all sequences", location: "Cerebral Hemispheres", confidence: 0.94, severity: "normal" },
-      { description: "Ventricles and sulci are normal in size for patient age", location: "Ventricular System", confidence: 0.91, severity: "normal" },
-      { description: "No focal mass lesion or area of abnormal signal", location: "Brain", confidence: 0.93, severity: "normal" },
-      { description: "Normal flow voids in major intracranial vessels", location: "Vascular", confidence: 0.89, severity: "normal" },
-      { description: "No diffusion restriction identified", location: "Diffusion Weighted Imaging", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Unremarkable MRI of the brain. No acute intracranial abnormality, demyelination, or mass lesion identified.",
-    recommendations: [
-      "Clinical correlation with neurological symptoms recommended",
-      "Consider contrast-enhanced sequences if clinical concern for mass or infection",
-      "Follow-up imaging as clinically indicated",
-    ],
-    teachingPoints: [
-      "MRI is superior for detecting demyelination, small masses, and posterior fossa lesions",
-      "Always correlate T2/FLAIR findings with DWI for acute vs chronic distinction",
-      "Check for normal variants that may mimic pathology",
-    ],
-  },
-  "mri-spine": {
-    findings: [
-      { description: "Normal vertebral body height and alignment", location: "Spine", confidence: 0.93, severity: "normal" },
-      { description: "Intervertebral discs are well-hydrated", location: "Discs", confidence: 0.87, severity: "normal" },
-      { description: "No spinal canal stenosis", location: "Spinal Canal", confidence: 0.91, severity: "normal" },
-      { description: "Normal signal intensity in spinal cord", location: "Spinal Cord", confidence: 0.94, severity: "normal" },
-    ],
-    impression: "Normal MRI of the spine. No significant disc herniation or canal stenosis.",
-    recommendations: [
-      "Consider conservative management if symptomatic",
-      "Physical therapy evaluation may be beneficial",
-    ],
-    teachingPoints: [
-      "Evaluate disc morphology on T2-weighted images",
-      "Check for cord signal changes on T2",
-      "Assess neural foramina on sagittal and axial images",
-    ],
-  },
-  "mri-knee": {
-    findings: [
-      { description: "Normal meniscal morphology without tears", location: "Menisci", confidence: 0.91, severity: "normal" },
-      { description: "Cruciate ligaments are intact", location: "Ligaments", confidence: 0.93, severity: "normal" },
-      { description: "Collateral ligaments appear normal", location: "Ligaments", confidence: 0.90, severity: "normal" },
-      { description: "Normal articular cartilage", location: "Cartilage", confidence: 0.88, severity: "normal" },
-      { description: "No joint effusion", location: "Joint Space", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Unremarkable MRI of the knee. No meniscal tears, ligament injury, or cartilage defects.",
-    recommendations: [
-      "Clinical correlation with physical examination",
-      "Consider arthroscopy if symptoms persist",
-    ],
-    teachingPoints: [
-      "Evaluate menisci on sagittal and coronal images",
-      "Check for meniscal extrusion",
-      "Assess cartilage on proton-density sequences",
-    ],
-  },
-  "mri-shoulder": {
-    findings: [
-      { description: "Rotator cuff tendons are intact", location: "Rotator Cuff", confidence: 0.92, severity: "normal" },
-      { description: "Normal labral morphology", location: "Glenoid Labrum", confidence: 0.89, severity: "normal" },
-      { description: "Biceps tendon is normal in position", location: "Biceps Tendon", confidence: 0.91, severity: "normal" },
-      { description: "No joint effusion", location: "Glenohumeral Joint", confidence: 0.93, severity: "normal" },
-    ],
-    impression: "Unremarkable MRI of the shoulder. No rotator cuff tear or labral abnormality.",
-    recommendations: [
-      "Physical therapy if symptomatic",
-      "Consider MR arthrography for labral evaluation if needed",
-    ],
-    teachingPoints: [
-      "Evaluate supraspinatus tendon on coronal and sagittal images",
-      "Check for labral tears on axial images",
-      "Assess for bursal fluid on T2-weighted images",
-    ],
-  },
-  "mri-cardiac": {
-    findings: [
-      { description: "Normal left ventricular size and function", location: "Left Ventricle", confidence: 0.93, severity: "normal" },
-      { description: "Ejection fraction within normal range", location: "LV Function", confidence: 0.90, severity: "normal" },
-      { description: "No late gadolinium enhancement", location: "Myocardium", confidence: 0.92, severity: "normal" },
-      { description: "Normal right ventricular function", location: "Right Ventricle", confidence: 0.89, severity: "normal" },
-    ],
-    impression: "Normal cardiac MRI. Preserved biventricular function without scar or fibrosis.",
-    recommendations: [
-      "Routine follow-up as clinically indicated",
-      "Consider stress testing if symptoms suggest ischemia",
-    ],
-    teachingPoints: [
-      "Use steady-state free precession for function assessment",
-      "LGE indicates myocardial scar or fibrosis",
-      "Evaluate pericardium for effusion or thickening",
-    ],
-  },
-  "mri-prostate": {
-    findings: [
-      { description: "Prostate size within normal limits", location: "Prostate", confidence: 0.91, severity: "normal" },
-      { description: "No suspicious PI-RADS 4 or 5 lesions identified", location: "Prostate Gland", confidence: 0.89, severity: "normal" },
-      { description: "Normal neurovascular bundle anatomy", location: "Neurovascular Bundles", confidence: 0.87, severity: "normal" },
-      { description: "No seminal vesicle invasion", location: "Seminal Vesicles", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "PI-RADS 2: Benign findings. No clinically significant cancer suspected.",
-    recommendations: [
-      "Routine PSA screening per guidelines",
-      "Consider follow-up MRI if PSA changes significantly",
-    ],
-    teachingPoints: [
-      "PI-RADS scoring guides clinical management",
-      "Peripheral zone lesions are most common site for cancer",
-      "Correlate with clinical findings and PSA",
-    ],
-  },
-  "mri-liver": {
-    findings: [
-      { description: "Liver normal in size with smooth contour", location: "Liver", confidence: 0.92, severity: "normal" },
-      { description: "No focal hepatic lesions identified", location: "Hepatic Parenchyma", confidence: 0.90, severity: "normal" },
-      { description: "Normal portal and hepatic venous flow", location: "Vasculature", confidence: 0.88, severity: "normal" },
-      { description: "No biliary dilatation", location: "Biliary Tree", confidence: 0.91, severity: "normal" },
-    ],
-    impression: "Unremarkable liver MRI. No focal lesions or signs of cirrhosis.",
-    recommendations: [
-      "Clinical correlation with liver function tests",
-      "Follow-up imaging as clinically indicated",
-    ],
-    teachingPoints: [
-      "Use hepatocyte-specific contrast for lesion characterization",
-      "Evaluate for signs of portal hypertension",
-      "Check for focal lesions on dynamic contrast-enhanced sequences",
-    ],
-  },
-  "ultrasound-abdominal": {
-    findings: [
-      { description: "Liver normal in size with homogeneous echogenicity, no focal lesions", location: "Liver", confidence: 0.91, severity: "normal" },
-      { description: "Gallbladder is unremarkable without stones, wall thickening, or pericholecystic fluid", location: "Gallbladder", confidence: 0.94, severity: "normal" },
-      { description: "Common bile duct is normal in caliber, measuring < 6mm", location: "Biliary Tree", confidence: 0.89, severity: "normal" },
-      { description: "Pancreas visualized and appears unremarkable", location: "Pancreas", confidence: 0.85, severity: "normal" },
-      { description: "Spleen normal in size without focal lesions", location: "Spleen", confidence: 0.92, severity: "normal" },
-      { description: "Both kidneys normal in size and echotexture, no hydronephrosis", location: "Kidneys", confidence: 0.93, severity: "normal" },
-      { description: "No free fluid in abdomen", location: "Peritoneal Cavity", confidence: 0.95, severity: "normal" },
-    ],
-    impression: "Unremarkable abdominal ultrasound. No focal hepatic, biliary, pancreatic, or renal abnormality identified.",
-    recommendations: [
-      "Clinical correlation with patient symptoms and lab values recommended",
-      "Consider further evaluation with CT if clinical suspicion remains high",
-    ],
-    teachingPoints: [
-      "Ultrasound is operator-dependent and has limitations in obese patients",
-      "Always document measurements of organs and any lesions found",
-      "Color Doppler should be used to assess vascularity of any masses",
-    ],
-  },
-  "ultrasound-cardiac": {
-    findings: [
-      { description: "Normal left ventricular size with preserved systolic function", location: "Left Ventricle", confidence: 0.93, severity: "normal" },
-      { description: "Ejection fraction estimated at 60-65% by biplane Simpson method", location: "LV Function", confidence: 0.88, severity: "normal" },
-      { description: "All cardiac valves appear structurally normal with good mobility", location: "Valves", confidence: 0.91, severity: "normal" },
-      { description: "No regional wall motion abnormalities identified", location: "Wall Motion", confidence: 0.90, severity: "normal" },
-      { description: "No pericardial effusion", location: "Pericardium", confidence: 0.96, severity: "normal" },
-      { description: "Right ventricular size and function are normal", location: "Right Ventricle", confidence: 0.89, severity: "normal" },
-      { description: "Inferior vena cava size and respiratory variation normal", location: "IVC", confidence: 0.87, severity: "normal" },
-    ],
-    impression: "Normal transthoracic echocardiogram with preserved biventricular function. No valvular or pericardial abnormality identified.",
-    recommendations: [
-      "Routine follow-up as clinically indicated",
-      "Consider stress echocardiography if symptoms suggest ischemia",
-    ],
-    teachingPoints: [
-      "Always assess all cardiac chambers and valves systematically",
-      "Correlate echo findings with clinical presentation and ECG",
-      "Document measurements according to ASE guidelines",
-    ],
-  },
-  "ultrasound-obstetric": {
-    findings: [
-      { description: "Single viable intrauterine pregnancy confirmed", location: "Uterus", confidence: 0.98, severity: "normal" },
-      { description: "Fetal cardiac activity present with normal heart rate", location: "Fetal Heart", confidence: 0.97, severity: "normal" },
-      { description: "Biometric measurements appropriate for gestational age", location: "Fetal Growth", confidence: 0.92, severity: "normal" },
-      { description: "Amniotic fluid volume is adequate", location: "Amniotic Fluid", confidence: 0.94, severity: "normal" },
-      { description: "Placenta anterior, clear of internal cervical os", location: "Placenta", confidence: 0.95, severity: "normal" },
-    ],
-    impression: "Normal intrauterine pregnancy with appropriate fetal growth and activity. Estimated gestational age consistent with dates.",
-    recommendations: [
-      "Continue routine prenatal care as per obstetric guidelines",
-      "Anatomy scan recommended at 18-20 weeks gestation",
-      "Follow-up ultrasound as clinically indicated",
-    ],
-    teachingPoints: [
-      "Always confirm intrauterine location to exclude ectopic pregnancy",
-      "Document fetal number, viability, and biometric measurements",
-      "Assess placental location and relationship to cervical os",
-    ],
-  },
-  "ultrasound-thyroid": {
-    findings: [
-      { description: "Thyroid gland normal in size and echotexture", location: "Thyroid", confidence: 0.92, severity: "normal" },
-      { description: "No thyroid nodules identified", location: "Thyroid Parenchyma", confidence: 0.94, severity: "normal" },
-      { description: "No cervical lymphadenopathy", location: "Neck Lymph Nodes", confidence: 0.90, severity: "normal" },
-      { description: "Normal vascularity on color Doppler", location: "Thyroid Vasculature", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "Unremarkable thyroid ultrasound. Normal thyroid gland without nodules.",
-    recommendations: [
-      "Correlate with thyroid function tests",
-      "Follow-up imaging if clinical indication arises",
-    ],
-    teachingPoints: [
-      "TI-RADS classification guides nodule management",
-      "Evaluate for suspicious features: microcalcifications, irregular margins, taller-than-wide",
-      "Check cervical lymph nodes for metastatic disease",
-    ],
-  },
-  "ultrasound-vascular": {
-    findings: [
-      { description: "No deep vein thrombosis identified in examined vessels", location: "Lower Extremity Veins", confidence: 0.94, severity: "normal" },
-      { description: "Normal venous compressibility throughout", location: "Venous System", confidence: 0.92, severity: "normal" },
-      { description: "Normal phasic flow pattern with respiration", location: "Venous Flow", confidence: 0.90, severity: "normal" },
-      { description: "No valvular incompetence identified", location: "Venous Valves", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "No evidence of deep vein thrombosis. Normal venous anatomy and flow patterns.",
-    recommendations: [
-      "Clinical correlation with D-dimer if indicated",
-      "Consider repeat study if symptoms persist or worsen",
-    ],
-    teachingPoints: [
-      "Compression is the primary method for DVT detection",
-      "Check for augmentation with distal compression",
-      "Evaluate proximal extension of any thrombus",
-    ],
-  },
-  "ultrasound-musculoskeletal": {
-    findings: [
-      { description: "Normal tendon echotexture without tears", location: "Tendons", confidence: 0.91, severity: "normal" },
-      { description: "No joint effusion identified", location: "Joint Space", confidence: 0.93, severity: "normal" },
-      { description: "Normal muscle architecture", location: "Muscles", confidence: 0.90, severity: "normal" },
-      { description: "No focal fluid collections", location: "Soft Tissues", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "Unremarkable musculoskeletal ultrasound. No tendon tears, effusion, or soft tissue abnormality.",
-    recommendations: [
-      "Clinical correlation with physical examination",
-      "Consider MRI if symptoms persist",
-    ],
-    teachingPoints: [
-      "Dynamic evaluation can reveal impingement",
-      "Compare with contralateral side for symmetry",
-      "Use color Doppler to assess inflammation",
-    ],
-  },
-  "ultrasound-breast": {
-    findings: [
-      { description: "No suspicious breast masses identified", location: "Breast Tissue", confidence: 0.93, severity: "normal" },
-      { description: "Normal fibroglandular tissue pattern", location: "Breast Parenchyma", confidence: 0.91, severity: "normal" },
-      { description: "No suspicious axillary lymph nodes", location: "Axilla", confidence: 0.90, severity: "normal" },
-      { description: "No cystic or solid lesions", location: "Bilateral Breasts", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Unremarkable breast ultrasound. BI-RADS Category 1: Negative.",
-    recommendations: [
-      "Continue routine screening per guidelines",
-      "Correlate with mammography if available",
-    ],
-    teachingPoints: [
-      "BI-RADS ultrasound lexicon standardizes reporting",
-      "Evaluate for suspicious features: irregular shape, angular margins, posterior shadowing",
-      "Document lesion size, location, and features precisely",
-    ],
-  },
-  "pet-ct": {
-    findings: [
-      { description: "No abnormal FDG uptake identified on whole-body imaging", location: "Whole Body Survey", confidence: 0.92, severity: "normal" },
-      { description: "Physiologic FDG uptake in brain and heart as expected", location: "Brain/Cardiac", confidence: 0.95, severity: "normal" },
-      { description: "No metabolically active lymph nodes in neck, chest, abdomen, or pelvis", location: "Lymphatic System", confidence: 0.91, severity: "normal" },
-      { description: "No suspicious osseous lesions identified", location: "Skeletal System", confidence: 0.89, severity: "normal" },
-      { description: "Low-level FDG excretion in urinary tract is normal", location: "Renal/Urinary", confidence: 0.96, severity: "normal" },
-    ],
-    impression: "No evidence of metabolically active disease on whole-body PET-CT. Unremarkable examination.",
-    recommendations: [
-      "Correlate with clinical findings and tumor markers as appropriate",
-      "Follow-up imaging per oncology protocol if applicable",
-    ],
-    teachingPoints: [
-      "SUV measurements help differentiate benign from malignant uptake",
-      "Always correlate PET findings with CT anatomic findings",
-      "Be aware of physiologic FDG uptake patterns and pitfalls",
-    ],
-  },
-  "bone-scan": {
-    findings: [
-      { description: "Normal radiotracer distribution throughout skeleton", location: "Whole Body Skeleton", confidence: 0.93, severity: "normal" },
-      { description: "No focal areas of increased uptake", location: "Osseous Structures", confidence: 0.91, severity: "normal" },
-      { description: "Normal renal excretion pattern", location: "Kidneys", confidence: 0.90, severity: "normal" },
-      { description: "No evidence of metastatic disease", location: "Skeletal System", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Unremarkable bone scan. No evidence of metastatic disease or metabolic bone abnormality.",
-    recommendations: [
-      "Correlate with clinical findings and tumor markers",
-      "Consider targeted X-rays or CT if symptoms localize",
-    ],
-    teachingPoints: [
-      "Superscans can mask metastatic disease",
-      "Check for renal non-visualization suggesting obstruction",
-      "Correlate with plain radiographs for suspicious findings",
-    ],
-  },
-  "thyroid-scan": {
-    findings: [
-      { description: "Normal radiotracer uptake in thyroid gland", location: "Thyroid", confidence: 0.92, severity: "normal" },
-      { description: "No hot or cold nodules identified", location: "Thyroid Parenchyma", confidence: 0.90, severity: "normal" },
-      { description: "Normal gland size and configuration", location: "Thyroid Gland", confidence: 0.91, severity: "normal" },
-      { description: "No ectopic thyroid tissue", location: "Neck/Mediastinum", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "Normal thyroid scan. No evidence of hyperfunctioning or non-functioning nodules.",
-    recommendations: [
-      "Correlate with thyroid function tests",
-      "Consider ultrasound if palpable nodule",
-    ],
-    teachingPoints: [
-      "Hot nodules have low malignant potential",
-      "Cold nodules require further evaluation",
-      "Check for retrosternal extension",
-    ],
-  },
-  "ventilation-perfusion": {
-    findings: [
-      { description: "Normal perfusion pattern throughout both lungs", location: "Pulmonary Vasculature", confidence: 0.93, severity: "normal" },
-      { description: "Normal ventilation pattern matching perfusion", location: "Lung Parenchyma", confidence: 0.91, severity: "normal" },
-      { description: "No segmental perfusion defects identified", location: "Pulmonary Arteries", confidence: 0.92, severity: "normal" },
-      { description: "No evidence of pulmonary embolism", location: "Pulmonary Circulation", confidence: 0.94, severity: "normal" },
-    ],
-    impression: "Low probability for pulmonary embolism. Normal V/Q scan.",
-    recommendations: [
-      "Clinical correlation with D-dimer and clinical probability",
-      "Consider CT pulmonary angiogram if high clinical suspicion",
-    ],
-    teachingPoints: [
-      "V/Q mismatch suggests pulmonary embolism",
-      "Matched defects may represent parenchymal disease",
-      "Use revised PIOPED criteria for interpretation",
-    ],
-  },
-  "mammogram": {
-    findings: [
-      { description: "Bilateral digital screening mammogram performed in standard views", location: "Bilateral Breasts", confidence: 0.94, severity: "normal" },
-      { description: "Breast parenchyma shows scattered fibroglandular densities", location: "Breast Tissue", confidence: 0.92, severity: "normal" },
-      { description: "No suspicious masses, calcifications, or architectural distortion", location: "Both Breasts", confidence: 0.91, severity: "normal" },
-      { description: "No skin thickening or nipple retraction", location: "Skin/Nipple", confidence: 0.93, severity: "normal" },
-      { description: "Axillary lymph nodes appear normal in morphology", location: "Bilateral Axillae", confidence: 0.90, severity: "normal" },
-    ],
-    impression: "BI-RADS Category 1: Negative. No evidence of malignancy. Annual screening recommended.",
-    recommendations: [
-      "Continue annual screening mammography",
-      "Clinical breast exam as part of routine health maintenance",
-      "Breast self-awareness encouraged",
-    ],
-    teachingPoints: [
-      "BI-RADS classification standardizes reporting and recommendations",
-      "Compare with prior studies to identify new or changing findings",
-      "Recall rates should be approximately 10% for screening mammography",
-    ],
-  },
-  "dexa": {
-    findings: [
-      { description: "Lumbar spine T-score: -0.5, within normal range", location: "Lumbar Spine (L1-L4)", confidence: 0.95, severity: "normal" },
-      { description: "Left femoral neck T-score: -0.3, within normal range", location: "Left Hip", confidence: 0.94, severity: "normal" },
-      { description: "Total left hip T-score: -0.2, within normal range", location: "Total Hip", confidence: 0.93, severity: "normal" },
-    ],
-    impression: "Normal bone mineral density. No evidence of osteoporosis or osteopenia. BMD is within expected range for age.",
-    recommendations: [
-      "Continue calcium and vitamin D supplementation as appropriate",
-      "Weight-bearing exercise encouraged for bone health",
-      "Repeat DEXA in 2 years or as clinically indicated",
-    ],
-    teachingPoints: [
-      "T-score compares patient to young adult peak bone mass",
-      "Z-score compares patient to age-matched reference population",
-      "WHO classification: Normal > -1.0, Osteopenia -1.0 to -2.5, Osteoporosis < -2.5",
-    ],
-  },
-  "angiography": {
-    findings: [
-      { description: "Coronary arteries are patent without significant stenosis", location: "Coronary", confidence: 0.93, severity: "normal" },
-      { description: "No significant plaque burden identified", location: "Vessels", confidence: 0.91, severity: "normal" },
-      { description: "Normal cardiac chamber sizes", location: "Cardiac", confidence: 0.92, severity: "normal" },
-      { description: "Pulmonary arteries are clear", location: "Pulmonary", confidence: 0.94, severity: "normal" },
-    ],
-    impression: "Normal coronary angiogram. No significant coronary artery disease.",
-    recommendations: [
-      "Risk factor modification as indicated",
-      "Follow-up per cardiology recommendations",
-    ],
-    teachingPoints: [
-      "Evaluate all major epicardial vessels",
-      "Quantify stenosis as percentage diameter reduction",
-      "Consider FFR for intermediate lesions",
-    ],
-  },
-  "fluoroscopy": {
-    findings: [
-      { description: "Normal barium transit through esophagus", location: "Esophageal", confidence: 0.91, severity: "normal" },
-      { description: "No evidence of reflux or stricture", location: "EG Junction", confidence: 0.89, severity: "normal" },
-      { description: "Stomach and duodenum appear normal", location: "Upper GI", confidence: 0.92, severity: "normal" },
-    ],
-    impression: "Normal upper GI series. No evidence of structural abnormality or obstruction.",
-    recommendations: [
-      "Clinical correlation with symptoms",
-      "Consider endoscopy if symptoms persist",
-    ],
-    teachingPoints: [
-      "Evaluate swallowing mechanism dynamically",
-      "Check for hiatal hernia",
-      "Assess for delayed emptying",
-    ],
-  },
-  "default": {
-    findings: [
-      { description: "Image quality is adequate for interpretation", location: "Overall Quality", confidence: 0.90, severity: "normal" },
-      { description: "No acute abnormality identified on initial review", location: "General", confidence: 0.88, severity: "normal" },
-    ],
-    impression: "Analysis completed. No acute abnormality identified. Clinical correlation with patient symptoms recommended.",
-    recommendations: [
-      "Clinical correlation recommended",
-      "Consider follow-up imaging as clinically indicated",
-      "Consult radiologist for detailed interpretation",
-    ],
-    teachingPoints: [
-      "Systematic review of all anatomical regions is essential",
-      "Clinical correlation improves diagnostic accuracy",
-      "Consider patient history when interpreting findings",
-    ],
-  },
-};
-
-// Helper function to get findings key from image type
-function getFindingsKey(imageType: string): string {
+function detectModality(imageType?: string, clinicalContext?: string): ModalityType {
+  if (!imageType) return 'other';
+  
   const searchTerms = imageType.toLowerCase();
   
-  if (searchTerms.includes("chest") && searchTerms.includes("xray") || searchTerms.includes("chest-xray")) {
-    return "chest-xray";
-  } else if (searchTerms.includes("xray") && (searchTerms.includes("extremity") || searchTerms.includes("limb"))) {
-    return "xray-extremity";
-  } else if (searchTerms.includes("xray") && searchTerms.includes("spine")) {
-    return "xray-spine";
-  } else if (searchTerms.includes("xray") && searchTerms.includes("abdom")) {
-    return "xray-abdominal";
-  } else if (searchTerms.includes("ct") && searchTerms.includes("angiography")) {
-    return "ct-angiography";
-  } else if (searchTerms.includes("ct") && searchTerms.includes("chest")) {
-    return "ct-chest";
-  } else if (searchTerms.includes("ct") && (searchTerms.includes("head") || searchTerms.includes("brain"))) {
-    return "ct-head";
-  } else if (searchTerms.includes("ct") && searchTerms.includes("spine")) {
-    return "ct-spine";
-  } else if (searchTerms.includes("ct") || searchTerms.includes("ct-scan")) {
-    return "ct-scan";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("brain")) {
-    return "mri-brain";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("spine")) {
-    return "mri-spine";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("knee")) {
-    return "mri-knee";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("shoulder")) {
-    return "mri-shoulder";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("cardiac")) {
-    return "mri-cardiac";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("prostate")) {
-    return "mri-prostate";
-  } else if (searchTerms.includes("mri") && searchTerms.includes("liver")) {
-    return "mri-liver";
-  } else if (searchTerms.includes("echo") || (searchTerms.includes("cardiac") && searchTerms.includes("ultrasound"))) {
-    return "ultrasound-cardiac";
-  } else if (searchTerms.includes("obstetric") || searchTerms.includes("prenatal") || searchTerms.includes("fetal")) {
-    return "ultrasound-obstetric";
-  } else if (searchTerms.includes("thyroid") && searchTerms.includes("ultrasound")) {
-    return "ultrasound-thyroid";
-  } else if (searchTerms.includes("vascular") && searchTerms.includes("ultrasound")) {
-    return "ultrasound-vascular";
-  } else if (searchTerms.includes("msk") || (searchTerms.includes("musculoskeletal"))) {
-    return "ultrasound-musculoskeletal";
-  } else if (searchTerms.includes("breast") && searchTerms.includes("ultrasound")) {
-    return "ultrasound-breast";
-  } else if (searchTerms.includes("ultrasound") && searchTerms.includes("abdom")) {
-    return "ultrasound-abdominal";
-  } else if (searchTerms.includes("bone-scan")) {
-    return "bone-scan";
-  } else if (searchTerms.includes("thyroid") && searchTerms.includes("scan")) {
-    return "thyroid-scan";
-  } else if (searchTerms.includes("ventilation") || searchTerms.includes("perfusion") || searchTerms.includes("v/q")) {
-    return "ventilation-perfusion";
-  } else if (searchTerms.includes("pet") || searchTerms.includes("pet-ct")) {
-    return "pet-ct";
-  } else if (searchTerms.includes("mammogram") || searchTerms.includes("breast")) {
-    return "mammogram";
-  } else if (searchTerms.includes("dexa") || searchTerms.includes("bone density")) {
-    return "dexa";
-  } else if (searchTerms.includes("angiography")) {
-    return "angiography";
-  } else if (searchTerms.includes("fluoroscopy")) {
-    return "fluoroscopy";
+  // X-Ray detection
+  if (searchTerms.includes('xray') || searchTerms.includes('x-ray') || searchTerms.includes('radiograph')) {
+    if (searchTerms.includes('chest')) return 'xray_chest';
+    if (searchTerms.includes('abdom') || searchTerms.includes('axr') || searchTerms.includes('kup')) return 'xray_abdominal';
+    if (searchTerms.includes('spine') || searchTerms.includes('cervical') || searchTerms.includes('lumbar') || searchTerms.includes('thoracic')) return 'xray_spine';
+    if (searchTerms.includes('extremity') || searchTerms.includes('limb') || searchTerms.includes('arm') || searchTerms.includes('leg') || searchTerms.includes('hand') || searchTerms.includes('foot')) return 'xray_extremity';
+    if (searchTerms.includes('skeletal') || searchTerms.includes('bone')) return 'xray_skeletal';
+    return 'xray_chest'; // Default X-ray
   }
   
-  return "default";
+  // CT detection
+  if (searchTerms.includes('ct') || searchTerms.includes('cat scan')) {
+    if (searchTerms.includes('head') || searchTerms.includes('brain') || searchTerms.includes('neuro')) return 'ct_head';
+    if (searchTerms.includes('chest') || searchTerms.includes('thorax') || searchTerms.includes('lung')) return 'ct_chest';
+    if (searchTerms.includes('abdom') || searchTerms.includes('abd')) return 'ct_abdomen';
+    if (searchTerms.includes('pelvis') || searchTerms.includes('pelvic')) return 'ct_pelvis';
+    if (searchTerms.includes('spine') || searchTerms.includes('cervical') || searchTerms.includes('lumbar')) return 'ct_spine';
+    if (searchTerms.includes('angio') || searchTerms.includes('cta') || searchTerms.includes('vascular')) return 'ct_angio';
+    return 'ct_other';
+  }
+  
+  // MRI detection
+  if (searchTerms.includes('mri') || searchTerms.includes('mr ') || searchTerms.includes('magnetic')) {
+    if (searchTerms.includes('brain') || searchTerms.includes('head') || searchTerms.includes('neuro')) return 'mri_brain';
+    if (searchTerms.includes('spine') || searchTerms.includes('cervical') || searchTerms.includes('lumbar')) return 'mri_spine';
+    if (searchTerms.includes('knee') || searchTerms.includes('shoulder') || searchTerms.includes('hip') || searchTerms.includes('msk')) return 'mri_musculoskeletal';
+    if (searchTerms.includes('cardiac') || searchTerms.includes('heart')) return 'mri_cardiac';
+    if (searchTerms.includes('abdom') || searchTerms.includes('liver')) return 'mri_abdomen';
+    if (searchTerms.includes('pelvis') || searchTerms.includes('prostate')) return 'mri_pelvis';
+    return 'mri_other';
+  }
+  
+  // Ultrasound detection
+  if (searchTerms.includes('ultrasound') || searchTerms.includes('us ') || searchTerms.includes('echo') || searchTerms.includes('doppler')) {
+    if (searchTerms.includes('abdom')) return 'us_abdominal';
+    if (searchTerms.includes('echo') || searchTerms.includes('cardiac') || searchTerms.includes('heart') || searchTerms.includes('transthoracic')) return 'us_cardiac';
+    if (searchTerms.includes('obstetric') || searchTerms.includes('pregnancy') || searchTerms.includes('fetal') || searchTerms.includes('prenatal')) return 'us_obstetric';
+    if (searchTerms.includes('thyroid') || searchTerms.includes('neck')) return 'us_thyroid';
+    if (searchTerms.includes('vascular') || searchTerms.includes('dvt') || searchTerms.includes('doppler') || searchTerms.includes('arterial') || searchTerms.includes('venous')) return 'us_vascular';
+    if (searchTerms.includes('msk') || searchTerms.includes('musculoskeletal') || searchTerms.includes('tendon')) return 'us_musculoskeletal';
+    return 'us_other';
+  }
+  
+  // Other modalities
+  if (searchTerms.includes('mammogram') || searchTerms.includes('mammography') || searchTerms.includes('breast') && searchTerms.includes('xray')) return 'mammogram';
+  if (searchTerms.includes('pet') || searchTerms.includes('pet-ct') || searchTerms.includes('fdg')) return 'pet_ct';
+  if (searchTerms.includes('dexa') || searchTerms.includes('bone density') || searchTerms.includes('osteoporosis')) return 'dexa';
+  if (searchTerms.includes('angio') || searchTerms.includes('angiogram') || searchTerms.includes('angiography')) return 'angio';
+  if (searchTerms.includes('fluoro') || searchTerms.includes('fluoroscopy')) return 'fluoro';
+  if (searchTerms.includes('nuclear') || searchTerms.includes('bone scan') || searchTerms.includes('v/q') || searchTerms.includes('ventilation')) return 'nuclear';
+  
+  return 'other';
 }
 
-// Medical image analysis prompt for VLM
-const MEDICAL_IMAGE_ANALYSIS_PROMPT = `You are an expert radiologist AI assistant. Analyze this medical image and provide a comprehensive radiological report.
-
-IMPORTANT INSTRUCTIONS:
-1. First, determine if this is a valid medical imaging scan (X-ray, CT, MRI, Ultrasound, PET-CT, Mammogram, DEXA, Angiography, Fluoroscopy, etc.)
-2. If this is NOT a medical image (e.g., a regular photo, selfie, landscape, artwork, screenshot), respond with ONLY a JSON object indicating rejection
-3. If this IS a medical image, provide a detailed structured analysis
-
-RESPONSE FORMAT (JSON only, no other text):
-
-For NON-MEDICAL images (rejection):
-{
-  "isMedicalImage": false,
-  "rejectionReason": "Brief explanation of why this is not a medical scan"
+async function performVLMAnalysis(
+  imageBase64: string,
+  modality: ModalityType,
+  clinicalContext?: string,
+  patientInfo?: { age?: number; sex?: string; indications?: string }
+): Promise<ImageAnalysisResult | null> {
+  const protocol = ANALYSIS_PROTOCOLS[modality] || ANALYSIS_PROTOCOLS['other'];
+  const prompt = generateModalitySpecificPrompt(modality, protocol, clinicalContext, patientInfo);
+  
+  try {
+    const zai = await getZAI();
+    
+    const response = await zai.chat.completions.createVision({
+      model: 'glm-4-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageBase64 } }
+          ]
+        }
+      ],
+      thinking: { type: 'disabled' }
+    });
+    
+    const content = response.choices[0]?.message?.content;
+    
+    if (!content) return null;
+    
+    // Clean and parse JSON
+    let cleaned = content.trim();
+    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+    cleaned = cleaned.trim();
+    
+    const result = JSON.parse(cleaned);
+    
+    // Add metadata
+    result.analysisMetadata = {
+      analysisId: `ANALYSIS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      analyzedAt: new Date().toISOString(),
+      modelVersion: 'glm-4-flash-vision',
+      analysisMode: 'ai_primary',
+      processingTimeMs: 0,
+      vlmUsed: true,
+    };
+    
+    result.disclaimer = generateDisclaimer();
+    
+    return result;
+    
+  } catch (error) {
+    console.error('VLM analysis error:', error);
+    return null;
+  }
 }
 
-For MEDICAL images:
-{
-  "isMedicalImage": true,
-  "type": "Image type (e.g., Chest X-Ray, CT Abdomen, MRI Brain)",
-  "technicalQuality": "Assessment of image quality, positioning, exposure",
-  "findings": [
-    {
-      "description": "Detailed description of finding",
-      "location": "Anatomical location",
-      "confidence": 0.85,
-      "severity": "normal|abnormal|critical"
-    }
-  ],
-  "impression": "Overall clinical impression and summary",
-  "confidence": 0.87,
-  "recommendations": [
-    "Clinical recommendation 1",
-    "Clinical recommendation 2"
-  ],
-  "detailedAnalysis": {
-    "systematicReview": "Systematic review of all anatomical regions",
-    "abnormalFindings": "Description of any abnormal findings",
-    "normalFindings": "Description of normal structures",
-    "differentialConsiderations": "Differential diagnosis if applicable"
-  },
-  "teachingPoints": [
-    "Educational point 1",
-    "Educational point 2"
-  ],
-  "clinicalCorrelation": "Suggested clinical correlation",
-  "followUp": "Follow-up recommendations"
+function generateFallbackAnalysis(
+  modality: ModalityType,
+  imageType?: string
+): ImageAnalysisResult {
+  const protocol = ANALYSIS_PROTOCOLS[modality] || ANALYSIS_PROTOCOLS['other'];
+  
+  // Generate appropriate fallback based on modality
+  const normalFindings = getNormalFindingsForModality(modality);
+  
+  return {
+    isMedicalImage: true,
+    modality: modality,
+    studyType: protocol.displayName,
+    
+    technicalQuality: {
+      overallQuality: 'adequate',
+      positioning: 'adequate',
+      exposure: 'adequate',
+      motion: 'none',
+      artifacts: [],
+      diagnostic: true,
+      limitationsForDiagnosis: ['Template-based analysis - VLM unavailable for detailed assessment'],
+    },
+    
+    limitations: ['Template-based analysis - VLM unavailable for detailed assessment'],
+    
+    findings: normalFindings.map((finding, i) => ({
+      id: `F${i + 1}`,
+      findingCode: '',
+      term: finding.term,
+      description: finding.description,
+      location: { region: finding.location },
+      laterality: 'not_applicable',
+      severity: 'normal' as SeverityLevel,
+      confidence: 0.70,
+      confidenceLevel: 'low' as ConfidenceLevel,
+      urgency: 'routine' as UrgencyLevel,
+      isActionable: false,
+    })),
+    
+    normalFindings: normalFindings.map(f => f.description),
+    abnormalFindings: [],
+    
+    impression: `${protocol.displayName} shows no acute abnormality. Template-based preliminary analysis - recommend radiologist review for definitive interpretation.`,
+    conclusion: 'No acute abnormality identified on preliminary template analysis.',
+    overallUrgency: 'routine',
+    overallSeverity: 'normal',
+    overallConfidence: 0.70,
+    
+    differentialDiagnoses: [],
+    recommendations: [
+      {
+        type: 'follow_up',
+        priority: 'routine',
+        recommendation: 'Clinical correlation recommended',
+        rationale: 'Template-based analysis requires clinical context',
+        evidenceLevel: 'expert_opinion',
+      }
+    ],
+    followUpRecommendations: [],
+    criticalAlerts: [],
+    
+    analysisMetadata: {
+      analysisId: `ANALYSIS-FALLBACK-${Date.now()}`,
+      analyzedAt: new Date().toISOString(),
+      modelVersion: 'template-fallback',
+      analysisMode: 'template_fallback',
+      processingTimeMs: 0,
+      vlmUsed: false,
+    },
+    
+    disclaimer: generateDisclaimer(),
+  };
 }
 
-IMPORTANT: 
-- Be thorough but conservative in your analysis
-- If image quality is poor, note this in technicalQuality
-- Always include appropriate clinical disclaimers
-- Use confidence values between 0.0 and 1.0
-- Respond with ONLY valid JSON, no markdown or additional text`;
+function getNormalFindingsForModality(modality: ModalityType): { term: string; description: string; location: string }[] {
+  const findings: Partial<Record<ModalityType, { term: string; description: string; location: string }[]>> = {
+    xray_chest: [
+      { term: 'Cardiac silhouette', description: 'Cardiac silhouette within normal limits, cardiothoracic ratio < 0.5', location: 'Cardiac' },
+      { term: 'Lungs', description: 'Lungs clear bilaterally without infiltrates, masses, or effusions', location: 'Pulmonary' },
+      { term: 'Pleura', description: 'No pleural effusion or pneumothorax', location: 'Pleural' },
+      { term: 'Mediastinum', description: 'Mediastinum midline, normal width', location: 'Mediastinal' },
+      { term: 'Bones', description: 'Visible ribs and clavicles intact', location: 'Musculoskeletal' },
+    ],
+    ct_head: [
+      { term: 'Brain parenchyma', description: 'Normal gray-white differentiation, no acute hemorrhage', location: 'Brain' },
+      { term: 'Ventricles', description: 'Ventricles normal size and configuration', location: 'Ventricular' },
+      { term: 'Cisterns', description: 'Basal cisterns patent', location: 'CSF spaces' },
+      { term: 'Midline', description: 'No midline shift', location: 'Brain' },
+      { term: 'Skull', description: 'No acute fracture', location: 'Calvarium' },
+    ],
+    us_abdominal: [
+      { term: 'Liver', description: 'Normal size and echogenicity', location: 'Liver' },
+      { term: 'Gallbladder', description: 'No stones or wall thickening', location: 'Gallbladder' },
+      { term: 'CBD', description: 'Common bile duct normal caliber', location: 'Biliary' },
+      { term: 'Kidneys', description: 'Normal size and echotexture, no hydronephrosis', location: 'Renal' },
+      { term: 'Spleen', description: 'Normal size', location: 'Spleen' },
+    ],
+  };
+  
+  // Return findings for the modality or default
+  return findings[modality] || [
+    { term: 'Image quality', description: 'Image quality adequate for interpretation', location: 'General' },
+  ];
+}
+
+function generateDisclaimer(): string {
+  return `MEDICAL DISCLAIMER: This AI-assisted analysis is for preliminary clinical decision support only. 
+All findings must be verified by a board-certified radiologist or qualified physician.
+Clinical decisions should not be made solely based on this analysis.
+This tool does not replace professional medical judgment.
+Always correlate imaging findings with clinical presentation and patient history.
+In case of critical findings, immediate clinical notification is required.`;
+}
+
+// =============================================================================
+// API ROUTE HANDLER
+// =============================================================================
 
 export async function POST(request: NextRequest) {
-  // Authentication check
+  const startTime = Date.now();
+  
+  // Authentication
   const authResult = await authenticateRequest(request);
   if (!authResult.authenticated) {
     return NextResponse.json({ success: false, error: authResult.error }, { status: 401 });
   }
+  
   const user = authResult.user!;
   if (!user.permissions.includes('imaging:read')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Forbidden - imaging:read permission required' }, { status: 403 });
   }
-
+  
   try {
     const body = await request.json();
-    const { imageType, imageBase64, patientId, clinicalContext } = body;
-
+    const { imageType, imageBase64, patientId, clinicalContext, patientAge, patientSex, indications } = body;
+    
     if (!imageBase64) {
       return NextResponse.json({
         success: false,
-        error: "No image provided. Please upload an image for analysis.",
+        error: 'No image provided. Please upload an image for analysis.',
       }, { status: 400 });
     }
-
-    // Try to use VLM for real analysis
-    let useVLM = true;
-    let analysisResult: ImageAnalysisResult | null = null;
     
-    try {
-      const zai = await getZAI();
-
-      // Build the analysis prompt with clinical context if available
-      let analysisPrompt = MEDICAL_IMAGE_ANALYSIS_PROMPT;
-      if (clinicalContext) {
-        analysisPrompt += `\n\nPATIENT CONTEXT: ${clinicalContext}`;
-      }
-      if (imageType) {
-        analysisPrompt += `\n\nSELECTED IMAGE TYPE: ${imageType} (User selected this type - verify if the image matches)`;
-      }
-
-      // Analyze the image using VLM
-      const response = await zai.chat.completions.createVision({
-        model: 'glm-4-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: analysisPrompt
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64
-                }
-              }
-            ]
-          }
-        ],
-        thinking: { type: 'disabled' }
-      });
-
-      const analysisContent = response.choices[0]?.message?.content;
-
-      if (analysisContent) {
-        // Parse the JSON response
-        try {
-          // Clean up the response - remove any markdown code blocks if present
-          let cleanedContent = analysisContent.trim();
-          if (cleanedContent.startsWith('```json')) {
-            cleanedContent = cleanedContent.slice(7);
-          } else if (cleanedContent.startsWith('```')) {
-            cleanedContent = cleanedContent.slice(3);
-          }
-          if (cleanedContent.endsWith('```')) {
-            cleanedContent = cleanedContent.slice(0, -3);
-          }
-          cleanedContent = cleanedContent.trim();
-          
-          analysisResult = JSON.parse(cleanedContent);
-        } catch (parseError) {
-          // Parsing failed, use fallback
-          useVLM = false;
-        }
-      } else {
-        useVLM = false;
-      }
-    } catch (vlmError) {
-      // Silently fall back to predefined analysis when VLM API is unavailable
-      // This handles API key issues, rate limits, and other VLM errors gracefully
-      useVLM = false;
+    // Detect modality
+    const modality = detectModality(imageType, clinicalContext);
+    const protocol = ANALYSIS_PROTOCOLS[modality];
+    
+    // Prepare patient info
+    const patientInfo = {
+      age: patientAge,
+      sex: patientSex,
+      indications: indications || clinicalContext,
+    };
+    
+    // Try VLM analysis
+    let analysisResult = await performVLMAnalysis(imageBase64, modality, clinicalContext, patientInfo);
+    
+    // Fall back to template if VLM fails
+    if (!analysisResult) {
+      analysisResult = generateFallbackAnalysis(modality, imageType);
     }
-
-    // If VLM failed or returned non-medical image, use fallback
-    if (!useVLM || !analysisResult) {
-      // Use fallback predefined analysis
-      const findingsKey = getFindingsKey(imageType || "Medical Image");
-      const findingsData = FALLBACK_FINDINGS[findingsKey] || FALLBACK_FINDINGS["default"];
-      
-      analysisResult = {
-        type: imageType || "Medical Image",
-        findings: findingsData.findings,
-        impression: findingsData.impression,
-        confidence: 0.85,
-        recommendations: findingsData.recommendations,
-        isMedicalImage: true,
-        teachingPoints: findingsData.teachingPoints,
-      };
-    }
-
-    // Check if the image was rejected as non-medical
+    
+    // Update processing time
+    analysisResult.analysisMetadata.processingTimeMs = Date.now() - startTime;
+    
+    // Handle rejection
     if (analysisResult.isMedicalImage === false) {
       return NextResponse.json({
         success: false,
         isMedicalImage: false,
-        rejectionReason: analysisResult.rejectionReason || "The uploaded image does not appear to be a valid medical scan.",
+        rejectionReason: analysisResult.rejectionReason || 'Not a valid medical image',
       }, { status: 400 });
     }
-
-    // Validate that we have the required fields
-    if (!analysisResult.findings || !Array.isArray(analysisResult.findings)) {
-      const findingsKey = getFindingsKey(imageType || "Medical Image");
-      const fallbackData = FALLBACK_FINDINGS[findingsKey] || FALLBACK_FINDINGS["default"];
-      analysisResult.findings = fallbackData.findings;
+    
+    // Create audit log
+    try {
+      await createAuditLog({
+        actorId: user.employeeId,
+        actorName: user.name || user.employeeId,
+        actorRole: user.role,
+        actionType: 'read',
+        resourceType: 'diagnostic',
+        resourceId: analysisResult.analysisMetadata.analysisId,
+        patientId: patientId,
+        metadata: {
+          modality: modality,
+          analysisMode: analysisResult.analysisMetadata.analysisMode,
+          urgency: analysisResult.overallUrgency,
+          criticalAlertsCount: analysisResult.criticalAlerts?.length || 0,
+        },
+      });
+    } catch (e) {
+      console.error('Audit log failed:', e);
     }
-
-    // Ensure confidence is a valid number
-    if (typeof analysisResult.confidence !== 'number' || isNaN(analysisResult.confidence)) {
-      analysisResult.confidence = 0.85;
-    }
-
-    // Return the successful analysis
+    
+    // Return result
     return NextResponse.json({
       success: true,
-      data: {
-        ...analysisResult,
-        disclaimer: "ANALYSIS DISCLAIMER: This AI-assisted analysis is for educational and preliminary review purposes only. All findings must be verified by a board-certified radiologist. Clinical decisions should not be made solely based on this analysis.",
-        analyzedAt: new Date().toISOString(),
-        imageType: analysisResult.type || imageType || "Medical Image",
-        analysisMode: useVLM ? "AI-Powered Analysis (MedGemma Vision)" : "Template-Based Analysis",
-      },
+      data: analysisResult,
     });
-
+    
   } catch (error) {
-    console.error("Image Analysis API Error:", error);
+    console.error('Image Analysis API Error:', error);
     return NextResponse.json({
       success: false,
-      error: "Failed to analyze image. Please try again.",
-      details: error instanceof Error ? error.message : "Unknown error",
+      error: 'Failed to analyze image',
+      details: error instanceof Error ? error.message : 'Unknown error',
     }, { status: 500 });
   }
 }
 
 export async function GET() {
   return NextResponse.json({
-    status: "Medical Image Analysis API",
-    message: "AI-powered medical image analysis with fallback support",
-    supportedTypes: [
-      "X-Ray (Chest, Skeletal, Abdominal)",
-      "CT Scan (Head, Chest, Abdomen, Spine)",
-      "MRI (Brain, Spine, Joints, Cardiac)",
-      "Ultrasound (Abdominal, Cardiac, Obstetric, Thyroid, Vascular)",
-      "PET-CT",
-      "Mammogram",
-      "DEXA Scan",
-      "Angiography",
-      "Fluoroscopy",
-    ],
+    status: 'World-Class Medical Image Analysis API',
+    version: '2.0.0',
     features: [
-      "Real AI-powered image analysis (when VLM available)",
-      "Template-based fallback analysis",
-      "Structured radiological findings",
-      "Clinical impression generation",
-      "Teaching points for education",
-      "Standard recommendations",
+      'Modality-specific analysis protocols',
+      'Structured radiological reporting',
+      'Critical finding detection with alerts',
+      'Differential diagnosis support',
+      'ACR Appropriateness Criteria integration',
+      'BI-RADS/TI-RADS/PI-RADS/LI-RADS classification',
     ],
-    disclaimer: "All analyses must be verified by a board-certified radiologist.",
+    supportedModalities: Object.keys(ANALYSIS_PROTOCOLS),
+    totalProtocols: Object.keys(ANALYSIS_PROTOCOLS).length,
+    totalCriticalFindingsPatterns: Object.values(ANALYSIS_PROTOCOLS)
+      .reduce((sum, p) => sum + p.criticalFindings.length, 0),
+    disclaimer: generateDisclaimer(),
   });
 }

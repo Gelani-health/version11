@@ -414,3 +414,4 @@ This project is licensed under the MIT License.
 - UI components from [shadcn/ui](https://ui.shadcn.com/)
 - Database by [Prisma](https://www.prisma.io/)
 - Integrated with [Bahmni HIS](https://bahmni.org/)
+<!-- Auto-deploy test: Mon Mar 30 01:03:28 UTC 2026 -->
